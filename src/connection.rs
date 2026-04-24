@@ -57,6 +57,15 @@ impl Connection {
                 .context("Error decoding base RPC message.")?;
 
             eprintln!("First RPC message! {msg:#?}");
+
+            let resp = rpc::handle(msg, &mut rbuf)
+                .context("Error handling RPC message.")?;
+
+            let mut frame = Vec::new();
+            resp.serialize(&mut Cursor::new(&mut frame))
+                .context("Error serializing RPC reply.")?;
+
+            self.writer.send(frame).await?;
         }
     }
 }
@@ -133,6 +142,13 @@ impl ConnectionWriter {
         Self {
             join: tokio::spawn(Self::run(writer, rx)),
             tx,
+        }
+    }
+
+    async fn send(&self, frame: Vec<u8>) -> Result<()> {
+        match self.tx.send(frame).await {
+            Ok(()) => Ok(()),
+            Err(_) => Err(anyhow!("Client write channel died.")),
         }
     }
 

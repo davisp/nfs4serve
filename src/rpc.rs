@@ -1,8 +1,57 @@
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 
+use anyhow::{Context as _, Result, anyhow};
 use num_derive::{FromPrimitive, ToPrimitive};
 
+use crate::nfs;
 use crate::xdr::{self, XdrSerde};
+
+pub fn handle(mesg: RpcMessage, reader: &mut impl Read) -> Result<RpcMessage> {
+    let xid = mesg.xid;
+    match mesg.body {
+        RpcBody::Call(call) => {
+            let auth = if matches!(call.credentials.flavor, AuthFlavor::Unix) {
+                Some(
+                    AuthUnix::deserialize(&mut Cursor::new(
+                        &call.credentials.body,
+                    ))
+                    .context(
+                        "Error deserialize unix authentication in call body.",
+                    )?,
+                )
+            } else {
+                None
+            };
+
+            if call.rpc_version != 2 {
+                log::warn!(
+                    "Invalid RPC version sent by client: {} != 2",
+                    call.rpc_version
+                );
+                return Ok(RpcMessage::rpc_version_mismatch_reply(xid));
+            }
+
+            if call.program == nfs::PROGRAM {
+                nfs::handle(xid, call, auth, reader)
+            } else if call.program == nfs::PROGRAM_ACL
+                || call.program == nfs::PROGRAM_ID_MAP
+                || call.program == nfs::PROGRAM_METADATA
+            {
+                log::trace!("Ignoring NFS ACL RPC calls: {xid:?}");
+                Ok(RpcMessage::program_unavailable_reply(xid))
+            } else {
+                log::warn!("Unknown RPC program number: {}", call.program);
+                Ok(RpcMessage::program_unavailable_reply(xid))
+            }
+        }
+        RpcBody::Reply(mesg) => {
+            log::error!(
+                "Client sent an RPC Reply instead of a Call: {mesg:#?}",
+            );
+            Err(anyhow!("Bad RPC Reply message received from client."))
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
 #[repr(u32)]
@@ -63,11 +112,11 @@ xdr::serde_enum!(AuthFlavor);
 
 #[derive(Clone, Debug)]
 pub struct AuthUnix {
-    stamp: u32,
-    machinename: Vec<u8>,
-    uid: u32,
-    gid: u32,
-    gids: Vec<u32>,
+    pub stamp: u32,
+    pub machinename: Vec<u8>,
+    pub uid: u32,
+    pub gid: u32,
+    pub gids: Vec<u32>,
 }
 
 impl XdrSerde for AuthUnix {
@@ -93,8 +142,8 @@ impl XdrSerde for AuthUnix {
 
 #[derive(Debug, Default)]
 pub struct OpaqueAuth {
-    flavor: AuthFlavor,
-    body: Vec<u8>,
+    pub flavor: AuthFlavor,
+    pub body: Vec<u8>,
 }
 
 impl XdrSerde for OpaqueAuth {
@@ -114,8 +163,8 @@ impl XdrSerde for OpaqueAuth {
 
 #[derive(Debug)]
 pub struct RpcMessage {
-    xid: u32,
-    body: RpcBody,
+    pub xid: u32,
+    pub body: RpcBody,
 }
 
 impl RpcMessage {
@@ -220,12 +269,12 @@ impl XdrSerde for RpcBody {
 
 #[derive(Debug)]
 pub struct RpcBodyCall {
-    rpc_version: u32,
-    program: u32,
-    version: u32,
-    procedure: u32,
-    credentials: OpaqueAuth,
-    verifier: OpaqueAuth,
+    pub rpc_version: u32,
+    pub program: u32,
+    pub version: u32,
+    pub procedure: u32,
+    pub credentials: OpaqueAuth,
+    pub verifier: OpaqueAuth,
 }
 
 impl XdrSerde for RpcBodyCall {
@@ -286,8 +335,8 @@ impl XdrSerde for RpcBodyReply {
 
 #[derive(Debug)]
 pub struct AcceptedReply {
-    verifier: OpaqueAuth,
-    body: AcceptedBody,
+    pub verifier: OpaqueAuth,
+    pub body: AcceptedBody,
 }
 
 impl XdrSerde for AcceptedReply {
