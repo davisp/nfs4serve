@@ -1,0 +1,4 @@
+absolute-paths-max-segments = 4
+allowed-duplicate-crates = ["redox_syscall"]
+semicolon-outside-block-ignore-multiline = true
+too-many-arguments-threshold = 10

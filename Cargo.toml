@@ -1,0 +1,97 @@
+[package]
+name = "nfs4serve"
+version = "0.1.0"
+edition = "2024"
+authors = ["Paul J. Davis <paul.joseph.davis@gmail.com>"]
+description = "A Rust NFSv4.1 Server implementation"
+homepage = "https://github.com/davisp/nfs4serve"
+repository = "https://github.com/davisp/nfs4serve"
+readme = "README.md"
+keywords = ["nfs"]
+license = "BSD-3-Clause"
+categories = ["network-programming", "filesystem"]
+publish = false
+include = ["src/**/*", "src/*", "Cargo.toml", "LICENSE", "README.md"]
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1.9"
+byteorder = "1.4"
+filetime = "0.2"
+log = "0.4"
+num-traits = "0.2"
+num-derive = "0.4"
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+stderrlog = "0.6"
+
+# Activate Rust Hard Mode
+[lints.clippy]
+cargo = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+restriction = { level = "warn", priority = -1 }
+style = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+
+# Temp while I go through all cases
+blanket_clippy_restriction_lints = "allow"
+
+# Project Specific
+missing_errors_doc = "allow" # We use anyhow everywhere, not much point specifying.
+
+# Dev mode - Comment these out before a release
+exhaustive_structs = "allow"
+exhaustive_enums = "allow"
+use_debug = "allow"
+print_stderr = "allow"
+panic = "allow"
+panic_in_result_fn = "allow"
+std_instead_of_alloc = "allow"
+unwrap_in_result = "allow"
+unused_async = "allow"         # This is just annoying during development
+todo = "allow"                 # It's literally specifically for developing.
+
+# Need configuration
+arbitrary_source_item_ordering = "allow"
+
+# Temporary Disagreements
+arithmetic_side_effects = "allow"        # Perhaps some day?
+expect_used = "allow"                    # https://burntsushi.net/unwrap/
+missing_const_for_fn = "allow"           # Non-trivial const isn't stable yet
+missing_docs_in_private_items = "allow"  # Perhaps move to dev mode
+missing_inline_in_public_items = "allow" # Need to research negative effects
+module_name_repetitions = "allow"        # I see the point, but I think fails for preludes
+pattern_type_mismatch = "allow"          # I can't figure out how to satisfy this one
+similar_names = "allow"                  # Bit strict for my liking. foo_id vs foo_fd triggers this
+unwrap_used = "allow"                    # https://burntsushi.net/unwrap/
+
+# Hard disagreements
+as_conversions = "allow"                  # This is a group of lints, configure those instead
+default_numeric_fallback = "allow"        # Too many false positives
+filetype_is_file = "allow"                # If I meant not a directory, I would have written that.
+float_arithmetic = "allow"                # This isn't embedded development.
+implicit_return = "allow"                 # Noted as non-idiomatic in the docs
+indexing_slicing = "allow"                # Maybe if I got paid a whole lot more.
+integer_division = "allow"                # Relying on throwing away the remainder is the point
+integer_division_remainder_used = "allow" # This is not cryptographic software
+iter_over_hash_type = "allow"             # Let's not be too silly.
+missing_trait_methods = "allow"           # Docs say this should enabled per-trait
+mod_module_files = "allow"                # I rather dislike the mod_name.rs with mod_name directory.
+must_use_candidate = "allow"              # Seems non-idiomatic for things not like Result
+pub_use = "allow"                         # I generally dislike things that dictate source layout
+pub_with_shorthand = "allow"              # Mutually exclusive, I pick shorthand.
+question_mark_used = "allow"              # Idiomatic Rust
+semicolon_inside_block = "allow"          # Mutually exclusive with semicolon_outside_block
+shadow_reuse = "allow"                    # Disallowing rebinding leads to numbered variable names
+shadow_unrelated = "allow"                # Docs note that idiomatic rust allows this
+single_call_fn = "allow"                  # This is just way to broad.
+single_char_lifetime_names = "allow"      # This isn't idiomatic.
+std_instead_of_core = "allow"             # Not targeting a no_std use case right now
+struct_field_names = "allow"              # Too pedantic, even for me.
+unreachable = "allow"                     # Avoid forcing assert_eq!(0, 1) or equivalent
+unseparated_literal_suffix = "allow"      # Gotta pick one or the other. I picked this.
