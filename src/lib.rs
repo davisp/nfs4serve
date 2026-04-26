@@ -1,3 +1,5 @@
+#![allow(dead_code, reason = "Still in dev.")]
+
 mod connection;
 mod nfs;
 mod rpc;

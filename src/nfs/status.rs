@@ -1,68 +1,12 @@
-use std::io::Read;
-
-use anyhow::{Context as _, Result};
 use num_derive::{FromPrimitive, ToPrimitive};
-use num_traits::cast::FromPrimitive;
 
-use crate::rpc;
-use crate::xdr::{self, XdrSerde as _};
+use crate::xdr::{self, XdrDeserialize, XdrSerialize};
 
-/// These are the RPC constants needed to call the NFS Version 3
-///  service.  They are given in decimal.
-pub const PROGRAM: u32 = 100_003;
-pub const PROGRAM_ACL: u32 = 100_227;
-pub const PROGRAM_ID_MAP: u32 = 100_270;
-pub const PROGRAM_METADATA: u32 = 200_024;
-
-pub const VERSION: u32 = 4;
-pub const VERSION_MINOR: u32 = 1;
-
-pub fn handle(
-    xid: u32,
-    call: rpc::RpcBodyCall,
-    auth: Option<rpc::AuthUnix>,
-    reader: &mut impl Read,
-) -> Result<rpc::RpcMessage> {
-    if call.version != VERSION {
-        log::warn!(
-            "Client attempted an unsupported version of NFS: {} != {VERSION}",
-            call.version
-        );
-        return Ok(rpc::RpcMessage::program_mismatch_reply(xid, VERSION));
-    }
-
-    let prog =
-        NFSProgram::from_u32(call.procedure).unwrap_or(NFSProgram::Invalid);
-
-    log::info!("NFS program: {prog:?}");
-
-    match prog {
-        NFSProgram::Null => Ok(rpc::RpcMessage::successful_reply(xid)),
-        NFSProgram::Compound => {
-            let tag = Vec::<u8>::deserialize(reader)
-                .context("Error decoding request tag.")?;
-            let version = u32::deserialize(reader)
-                .context("Error decoding NFS minor version.")?;
-            if version != VERSION_MINOR {
-                todo!();
-            }
-
-            todo!();
-        }
-        NFSProgram::Invalid => {
-            Ok(rpc::RpcMessage::procedure_unavailable_reply(xid))
-        }
-    }
-}
-
-#[derive(Debug, FromPrimitive, ToPrimitive)]
-enum NFSProgram {
-    Null = 0,
-    Compound = 1,
-    Invalid = 255,
-}
-
-enum NFSStatus {
+/// NFS Status Codes
+#[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
+#[repr(u32)]
+#[expect(clippy::upper_case_acronyms, reason = "Errno variants")]
+pub enum NfsStatus {
     Ok = 0,                                 // everything is okay
     EPERM = 1,                              // caller not privileged
     ENOENT = 2,                             // no such file/directory
@@ -168,59 +112,4 @@ enum NFSStatus {
     DelegationRevoked = 10087,              // deleg./layout revoked
 }
 
-#[derive(Debug, FromPrimitive, ToPrimitive)]
-enum NFSOperation {
-    Access = 3,
-    Close = 4,
-    Commit = 5,
-    Create = 6,
-    PurgeDelegations = 7,
-    ReturnDelegation = 8,
-    GetAttribute = 9,
-    GetFh = 10,
-    Link = 11,
-    LockCreate = 12,
-    LockTest = 13,
-    LockRelease = 14,
-    Lookup = 15,
-    LookupParent = 16,
-    VerifyAttributeDiff = 17,
-    Open = 18,
-    OpenAttrs = 19,
-    OpenDowngrade = 21,
-    PutFh = 22,
-    PutPublicFh = 23,
-    PutRootFh = 24,
-    Read = 25,
-    ReadDir = 26,
-    ReadLink = 27,
-    Remove = 28,
-    Rename = 29,
-    RestoreFh = 31,
-    SaveFh = 32,
-    SecurityInfo = 33,
-    SetAttr = 34,
-    Verify = 37,
-    Write = 38,
-
-    BackchannelControl = 40,
-    BindConnectionToSession = 41,
-    ExchangeId = 42,
-    CreateSession = 43,
-    DestroySession = 44,
-    FreeStateId = 45,
-    GetDirDelegation = 46,
-    GetDeviceInfo = 47,
-    GetDeviceList = 48,
-    LayoutCommit = 49,
-    LayoutGet = 50,
-    LayoutReturn = 51,
-    SecurityInfoUnnamed = 52,
-    Sequence = 53,
-    SetSSV = 54,
-    TestStateId = 55,
-    WantDelegation = 56,
-    DestroyClient = 57,
-    ReclaimComplete = 58,
-    Illegal = 10044,
-}
+xdr::serde_enum!(NfsStatus);

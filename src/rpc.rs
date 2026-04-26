@@ -3,53 +3,125 @@ use std::io::{Cursor, Read, Write};
 use anyhow::{Context as _, Result, anyhow};
 use num_derive::{FromPrimitive, ToPrimitive};
 
-use crate::nfs;
-use crate::xdr::{self, XdrSerde};
+use crate::nfs::{self, NfsStatus};
+use crate::xdr::{self, XdrDeserialize, XdrSerialize};
 
-pub fn handle(mesg: RpcMessage, reader: &mut impl Read) -> Result<RpcMessage> {
-    let xid = mesg.xid;
-    match mesg.body {
-        RpcBody::Call(call) => {
-            let auth = if matches!(call.credentials.flavor, AuthFlavor::Unix) {
-                Some(
-                    AuthUnix::deserialize(&mut Cursor::new(
-                        &call.credentials.body,
-                    ))
-                    .context(
-                        "Error deserialize unix authentication in call body.",
-                    )?,
-                )
-            } else {
-                None
-            };
+pub struct RpcHandler {
+    xid: u32,
+    reader: Cursor<Vec<u8>>,
+    writer: Cursor<Vec<u8>>,
+}
 
-            if call.rpc_version != 2 {
-                log::warn!(
-                    "Invalid RPC version sent by client: {} != 2",
-                    call.rpc_version
+impl RpcHandler {
+    pub fn new(reader: Cursor<Vec<u8>>, writer: Cursor<Vec<u8>>) -> Self {
+        Self {
+            xid: 0,
+            reader,
+            writer,
+        }
+    }
+
+    pub fn xid(&self) -> u32 {
+        self.xid
+    }
+
+    pub fn run(mut self) -> Result<Vec<u8>> {
+        let mesg = RpcMessage::deserialize(&mut self.reader)
+            .context("Error decoding base RPC message.")?;
+
+        self.xid = mesg.xid;
+
+        match mesg.body {
+            RpcBody::Call(call) => {
+                let auth = if matches!(
+                    call.credentials.flavor,
+                    AuthFlavor::Unix
+                ) {
+                    Some(
+                        AuthUnix::deserialize(&mut Cursor::new(
+                            &call.credentials.body,
+                        ))
+                        .context(
+                            "Error deserialize unix authentication in call body.",
+                        )?,
+                    )
+                } else {
+                    None
+                };
+
+                if call.rpc_version != 2 {
+                    log::warn!(
+                        "Invalid RPC version sent by client: {} != 2",
+                        call.rpc_version
+                    );
+
+                    self.write(RpcMessage::rpc_version_mismatch_reply(
+                        mesg.xid,
+                    ))?;
+                    return Ok(self.writer.into_inner());
+                }
+
+                if call.program == nfs::PROGRAM {
+                    nfs::handle(&mut self, call, auth)?;
+                    Ok(self.writer.into_inner())
+                } else if call.program == nfs::PROGRAM_ACL
+                    || call.program == nfs::PROGRAM_ID_MAP
+                    || call.program == nfs::PROGRAM_METADATA
+                {
+                    log::trace!("Ignoring NFS ACL RPC calls: {:?}", mesg.xid);
+                    self.write(RpcMessage::program_unavailable_reply(
+                        mesg.xid,
+                    ))?;
+                    Ok(self.writer.into_inner())
+                } else {
+                    log::warn!("Unknown RPC program number: {}", call.program);
+                    self.write(RpcMessage::program_unavailable_reply(
+                        mesg.xid,
+                    ))?;
+                    Ok(self.writer.into_inner())
+                }
+            }
+            RpcBody::Reply(mesg) => {
+                log::error!(
+                    "Client sent an RPC Reply instead of a Call: {mesg:#?}",
                 );
-                return Ok(RpcMessage::rpc_version_mismatch_reply(xid));
+                Err(anyhow!("Bad RPC Reply message received from client."))
             }
+        }
+    }
 
-            if call.program == nfs::PROGRAM {
-                nfs::handle(xid, call, auth, reader)
-            } else if call.program == nfs::PROGRAM_ACL
-                || call.program == nfs::PROGRAM_ID_MAP
-                || call.program == nfs::PROGRAM_METADATA
-            {
-                log::trace!("Ignoring NFS ACL RPC calls: {xid:?}");
-                Ok(RpcMessage::program_unavailable_reply(xid))
-            } else {
-                log::warn!("Unknown RPC program number: {}", call.program);
-                Ok(RpcMessage::program_unavailable_reply(xid))
-            }
-        }
-        RpcBody::Reply(mesg) => {
-            log::error!(
-                "Client sent an RPC Reply instead of a Call: {mesg:#?}",
-            );
-            Err(anyhow!("Bad RPC Reply message received from client."))
-        }
+    pub fn nfs_reply(
+        &self,
+        status: NfsStatus,
+        tag: Vec<u8>,
+        op_results: Vec<NfsOpResult>,
+    ) -> Result<()> {
+        self.write(self.success())
+            .context("Error starting successful RPC response.")?;
+
+        self.write(status)
+            .context("Error writing NFS compound status.")?;
+
+        self.write(tag).context("Error writing NFS compound tag.")?;
+
+        self.write(op_results)
+            .context("Error writing NFS operation results.")?;
+
+        Ok(())
+    }
+
+    pub fn success(&self) -> RpcMessage {
+        RpcMessage::successful_reply(self.xid)
+    }
+
+    pub fn read<Value: XdrDeserialize>(&mut self) -> Result<Value> {
+        Value::deserialize(&mut self.reader)
+            .context("Error reading value from message frame.")
+    }
+
+    pub fn write<Value: XdrSerialize>(&mut self, val: Value) -> Result<()> {
+        val.serialize(&mut self.writer)
+            .context("Error serializing value to result frame.")
     }
 }
 
@@ -107,6 +179,7 @@ pub enum AuthFlavor {
     Unix = 1,
     Short = 2,
     Des = 3,
+    RpcSecGss = 6,
 }
 xdr::serde_enum!(AuthFlavor);
 
@@ -119,7 +192,7 @@ pub struct AuthUnix {
     pub gids: Vec<u32>,
 }
 
-impl XdrSerde for AuthUnix {
+impl XdrSerialize for AuthUnix {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.stamp.serialize(dest)?;
         self.machinename.serialize(dest)?;
@@ -128,7 +201,9 @@ impl XdrSerde for AuthUnix {
         self.gids.serialize(dest)?;
         Ok(())
     }
+}
 
+impl XdrDeserialize for AuthUnix {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         Ok(Self {
             stamp: u32::deserialize(src)?,
@@ -146,13 +221,15 @@ pub struct OpaqueAuth {
     pub body: Vec<u8>,
 }
 
-impl XdrSerde for OpaqueAuth {
+impl XdrSerialize for OpaqueAuth {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.flavor.serialize(dest)?;
         self.body.serialize(dest)?;
         Ok(())
     }
+}
 
+impl XdrDeserialize for OpaqueAuth {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         Ok(Self {
             flavor: AuthFlavor::deserialize(src)?,
@@ -219,13 +296,15 @@ impl RpcMessage {
     }
 }
 
-impl XdrSerde for RpcMessage {
+impl XdrSerialize for RpcMessage {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.xid.serialize(dest)?;
         self.body.serialize(dest)?;
         Ok(())
     }
+}
 
+impl XdrDeserialize for RpcMessage {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         Ok(Self {
             xid: u32::deserialize(src)?,
@@ -240,7 +319,7 @@ pub enum RpcBody {
     Reply(RpcBodyReply),
 }
 
-impl XdrSerde for RpcBody {
+impl XdrSerialize for RpcBody {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         match self {
             Self::Call(body) => {
@@ -254,7 +333,9 @@ impl XdrSerde for RpcBody {
         }
         Ok(())
     }
+}
 
+impl XdrDeserialize for RpcBody {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         match u32::deserialize(src)? {
             0 => Ok(Self::Call(RpcBodyCall::deserialize(src)?)),
@@ -277,7 +358,7 @@ pub struct RpcBodyCall {
     pub verifier: OpaqueAuth,
 }
 
-impl XdrSerde for RpcBodyCall {
+impl XdrSerialize for RpcBodyCall {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.rpc_version.serialize(dest)?;
         self.program.serialize(dest)?;
@@ -287,7 +368,9 @@ impl XdrSerde for RpcBodyCall {
         self.verifier.serialize(dest)?;
         Ok(())
     }
+}
 
+impl XdrDeserialize for RpcBodyCall {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         Ok(Self {
             rpc_version: u32::deserialize(src)?,
@@ -306,7 +389,7 @@ pub enum RpcBodyReply {
     Rejected(RejectedReply),
 }
 
-impl XdrSerde for RpcBodyReply {
+impl XdrSerialize for RpcBodyReply {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         match self {
             Self::Accepted(body) => {
@@ -320,7 +403,9 @@ impl XdrSerde for RpcBodyReply {
         }
         Ok(())
     }
+}
 
+impl XdrDeserialize for RpcBodyReply {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         match u32::deserialize(src)? {
             0 => Ok(Self::Accepted(AcceptedReply::deserialize(src)?)),
@@ -339,13 +424,15 @@ pub struct AcceptedReply {
     pub body: AcceptedBody,
 }
 
-impl XdrSerde for AcceptedReply {
+impl XdrSerialize for AcceptedReply {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.verifier.serialize(dest)?;
         self.body.serialize(dest)?;
         Ok(())
     }
+}
 
+impl XdrDeserialize for AcceptedReply {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         Ok(Self {
             verifier: OpaqueAuth::deserialize(src)?,
@@ -364,7 +451,7 @@ pub enum AcceptedBody {
     GarbageArguments,
 }
 
-impl XdrSerde for AcceptedBody {
+impl XdrSerialize for AcceptedBody {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         match self {
             Self::Success => {
@@ -386,7 +473,9 @@ impl XdrSerde for AcceptedBody {
         }
         Ok(())
     }
+}
 
+impl XdrDeserialize for AcceptedBody {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         match u32::deserialize(src)? {
             0 => Ok(Self::Success),
@@ -408,7 +497,7 @@ pub enum RejectedReply {
     AuthError(AuthState),
 }
 
-impl XdrSerde for RejectedReply {
+impl XdrSerialize for RejectedReply {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         match self {
             Self::RpcMismatch(body) => {
@@ -422,7 +511,9 @@ impl XdrSerde for RejectedReply {
         }
         Ok(())
     }
+}
 
+impl XdrDeserialize for RejectedReply {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         match u32::deserialize(src)? {
             0 => Ok(Self::RpcMismatch(MismatchInfo::deserialize(src)?)),
@@ -441,13 +532,15 @@ pub struct MismatchInfo {
     pub high: u32,
 }
 
-impl XdrSerde for MismatchInfo {
+impl XdrSerialize for MismatchInfo {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.low.serialize(dest)?;
         self.high.serialize(dest)?;
         Ok(())
     }
+}
 
+impl XdrDeserialize for MismatchInfo {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         Ok(Self {
             low: u32::deserialize(src)?,

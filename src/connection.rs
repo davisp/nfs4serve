@@ -8,9 +8,9 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 
-use crate::rpc;
+use crate::rpc::RpcHandler;
 use crate::server::NFSv4Server;
-use crate::xdr::XdrSerde as _;
+use crate::xdr::{XdrDeserialize as _, XdrSerialize as _};
 
 const RPC_LAST_FRAME: u32 = 0x80_00_00_00;
 const RPC_FRAME_LEN: u32 = 0x7F_FF_FF_FF;
@@ -52,20 +52,14 @@ impl Connection {
                 return Err(anyhow!("Client disconnected: {:?}", self.address));
             };
 
-            let mut rbuf = Cursor::new(frame);
-            let msg = rpc::RpcMessage::deserialize(&mut rbuf)
-                .context("Error decoding base RPC message.")?;
+            let rbuf = Cursor::new(frame);
+            let wbuf = Cursor::new(Vec::new());
 
-            eprintln!("First RPC message! {msg:#?}");
-
-            let resp = rpc::handle(msg, &mut rbuf)
+            let result = RpcHandler::new(rbuf, wbuf)
+                .run()
                 .context("Error handling RPC message.")?;
 
-            let mut frame = Vec::new();
-            resp.serialize(&mut Cursor::new(&mut frame))
-                .context("Error serializing RPC reply.")?;
-
-            self.writer.send(frame).await?;
+            self.writer.send(result).await?;
         }
     }
 }
