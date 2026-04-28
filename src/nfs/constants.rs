@@ -246,10 +246,10 @@ pub const FSLI4TF_RDMA: u32 = 0x01;
 // Flag bits in FsLocationsInfo::flags
 pub const FSLI4IF_VAR_SUB: u32 = 0x00_00_00_01;
 
-pub const NFL4_UFLG_MASK: u32 = 0x00_00_00_3F;
-pub const NFL4_UFLG_DENSE: u32 = 0x00_00_00_01;
-pub const NFL4_UFLG_COMMIT_THRU_MDS: u32 = 0x00_00_00_02;
-pub const NFL4_UFLG_STRIPE_UNIT_SIZE_MASK: u32 = 0xFF_FF_FF_C0;
+pub const NFL_UFLG_MASK: u32 = 0x00_00_00_3F;
+pub const NFL_UFLG_DENSE: u32 = 0x00_00_00_01;
+pub const NFL_UFLG_COMMIT_THRU_MDS: u32 = 0x00_00_00_02;
+pub const NFL_UFLG_STRIPE_UNIT_SIZE_MASK: u32 = 0xFF_FF_FF_C0;
 
 pub const ACCESS_READ: u32 = 0x00_00_00_01;
 pub const ACCESS_LOOKUP: u32 = 0x00_00_00_02;

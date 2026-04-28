@@ -1,3 +1,5 @@
+#![allow(clippy::wildcard_imports, reason = "Because I used a wildcard.")]
+
 use std::io::{Read, Write};
 
 use num_derive::{FromPrimitive, ToPrimitive};
@@ -591,10 +593,10 @@ impl XdrDeserialize for LayoutReturn {
         let ret = match ret_type {
             LayoutReturnType::File => {
                 let file = LayoutReturnFile::deserialize(src)?;
-                LayoutReturn::File(file)
+                Self::File(file)
             }
-            LayoutReturnType::FsId => LayoutReturn::FsId,
-            LayoutReturnType::All => LayoutReturn::All,
+            LayoutReturnType::FsId => Self::FsId,
+            LayoutReturnType::All => Self::All,
         };
 
         Ok(ret)
@@ -972,7 +974,7 @@ impl XdrDeserialize for ClientOwner {
     }
 }
 
-/// NFSv4.1 ServerOwner
+/// NFSv4.1 `ServerOwner`
 pub struct ServerOwner {
     minor_id: u64,
     major_id: MaxLenBytes<NFS_OPAQUE_LIMIT>,
@@ -1225,11 +1227,12 @@ impl XdrDeserialize for FsLocationsInfo {
 
 pub type NflUtil = u32;
 
-pub enum FileLayoutHintCare {
-    CareDense = NFL4_UFLG_DENSE as isize,
-    CareCommitThruMds = NFL4_UFLG_COMMIT_THRU_MDS as isize,
-    CareStripeCount = 0x00_00_00_80,
-}
+// This is defined in the spec, but not used anywhere.
+// pub enum FileLayoutHintCare {
+//     Dense = NFL_UFLG_DENSE,
+//     CommitThruMds = NFL_UFLG_COMMIT_THRU_MDS,
+//     StripeCount = 0x00_00_00_80,
+// }
 
 // Encoded in the loh_body field of data type layouthint4:
 pub struct NfsFileLayoutHint {
@@ -1273,7 +1276,7 @@ pub struct NfsFileLayoutDsAddress {
 impl XdrSerialize for NfsFileLayoutDsAddress {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.stripe_indices.serialize(dest)?;
-        xdr::serialize_vec_vec(dest, &self.multipath_ds_list[..])?;
+        xdr::serialize_vec_vec(dest, &self.multipath_ds_list)?;
 
         Ok(())
     }
@@ -1488,20 +1491,22 @@ impl XdrDeserialize for CreateType {
         let object_type = match ftype {
             NfsFileType::Link => {
                 let lt = LinkText::deserialize(src)?;
-                CreateType::Link(lt)
+                Self::Link(lt)
             }
             NfsFileType::Block => {
                 let data = SpecData::deserialize(src)?;
-                CreateType::Block(data)
+                Self::Block(data)
             }
             NfsFileType::Character => {
                 let data = SpecData::deserialize(src)?;
-                CreateType::Character(data)
+                Self::Character(data)
             }
-            NfsFileType::Socket => CreateType::Socket,
-            NfsFileType::Fifo => CreateType::Fifo,
-            NfsFileType::Directory => CreateType::Directory,
-            _ => CreateType::Invalid(ftype),
+            NfsFileType::Socket => Self::Socket,
+            NfsFileType::Fifo => Self::Fifo,
+            NfsFileType::Directory => Self::Directory,
+            NfsFileType::Regular
+            | NfsFileType::AttrDirectory
+            | NfsFileType::NamedAttr => Self::Invalid(ftype),
         };
 
         Ok(object_type)
@@ -1803,10 +1808,10 @@ impl XdrDeserialize for Locker {
 
         if flag {
             let owner = OpenToLockOwner::deserialize(src)?;
-            Ok(Locker::OpenOwner(owner))
+            Ok(Self::OpenOwner(owner))
         } else {
             let owner = ExistingLockOwner::deserialize(src)?;
-            Ok(Locker::LockOwner(owner))
+            Ok(Self::LockOwner(owner))
         }
     }
 }
@@ -2135,19 +2140,19 @@ impl XdrDeserialize for CreateHow {
         let how = match cmode {
             CreateMode::Unchecked => {
                 let attrs = FileAttrs::deserialize(src)?;
-                CreateHow::Unchecked(attrs)
+                Self::Unchecked(attrs)
             }
             CreateMode::Guarded => {
                 let attrs = FileAttrs::deserialize(src)?;
-                CreateHow::Guarded(attrs)
+                Self::Guarded(attrs)
             }
             CreateMode::Exclusive4 => {
                 let verifier = Verifier::deserialize(src)?;
-                CreateHow::Exclusive4(verifier)
+                Self::Exclusive4(verifier)
             }
             CreateMode::Exclusive4_1 => {
                 let verified_attrs = CreateVerifiedFileAttrs::deserialize(src)?;
-                CreateHow::Exclusive4_1(verified_attrs)
+                Self::Exclusive4_1(verified_attrs)
             }
         };
 
@@ -2184,10 +2189,10 @@ impl XdrDeserialize for OpenFlag {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let open_type = OpenType::deserialize(src)?;
         match open_type {
-            OpenType::NoCreate => Ok(OpenFlag::NoCreate),
+            OpenType::NoCreate => Ok(Self::NoCreate),
             OpenType::Create => {
                 let how = CreateHow::deserialize(src)?;
-                Ok(OpenFlag::Create(how))
+                Ok(Self::Create(how))
             }
         }
     }
@@ -2255,11 +2260,11 @@ impl XdrDeserialize for NfsSpaceLimit {
         match limit_by {
             LimitBy::Size => {
                 let size = u64::deserialize(src)?;
-                Ok(NfsSpaceLimit::Size(size))
+                Ok(Self::Size(size))
             }
             LimitBy::Blocks => {
                 let limit = NfsModifiedLimit::deserialize(src)?;
-                Ok(NfsSpaceLimit::Blocks(limit))
+                Ok(Self::Blocks(limit))
             }
         }
     }
@@ -2393,26 +2398,26 @@ impl XdrDeserialize for OpenClaim {
         let claim = match claim_type {
             OpenClaimType::Null => {
                 let component = Component::deserialize(src)?;
-                OpenClaim::Null(component)
+                Self::Null(component)
             }
             OpenClaimType::Previous => {
                 let delegation_type = OpenDelegationType::deserialize(src)?;
-                OpenClaim::Previous(delegation_type)
+                Self::Previous(delegation_type)
             }
             OpenClaimType::CurrentDelegate => {
                 let current_claim = CurrentDelegateOpenClaim::deserialize(src)?;
-                OpenClaim::CurrentDelegate(current_claim)
+                Self::CurrentDelegate(current_claim)
             }
             OpenClaimType::PreviousDelegate => {
                 let component = Component::deserialize(src)?;
-                OpenClaim::PreviousDelegate(component)
+                Self::PreviousDelegate(component)
             }
-            OpenClaimType::CurrentFh => OpenClaim::CurrentFh,
+            OpenClaimType::CurrentFh => Self::CurrentFh,
             OpenClaimType::CurrentDelegateFh => {
                 let state_id = StateId::deserialize(src)?;
-                OpenClaim::CurrentDelegateFh(state_id)
+                Self::CurrentDelegateFh(state_id)
             }
-            OpenClaimType::PreviousDelegateFh => OpenClaim::PreviousDelegateFh,
+            OpenClaimType::PreviousDelegateFh => Self::PreviousDelegateFh,
         };
 
         Ok(claim)
@@ -2596,29 +2601,25 @@ impl XdrDeserialize for OpenNoneDelegation {
         let why_no_deleg = WhyNoDelegation::deserialize(src)?;
 
         let delegation = match why_no_deleg {
-            WhyNoDelegation::NotWanted => OpenNoneDelegation::NotWanted,
+            WhyNoDelegation::NotWanted => Self::NotWanted,
             WhyNoDelegation::Contention => {
                 let will_signal = bool::deserialize(src)?;
-                OpenNoneDelegation::Contention(will_signal)
+                Self::Contention(will_signal)
             }
             WhyNoDelegation::Resource => {
                 let will_signal = bool::deserialize(src)?;
-                OpenNoneDelegation::Resource(will_signal)
+                Self::Resource(will_signal)
             }
-            WhyNoDelegation::NotSupportedFileType => {
-                OpenNoneDelegation::NotSupportedFileType
-            }
+            WhyNoDelegation::NotSupportedFileType => Self::NotSupportedFileType,
             WhyNoDelegation::WriteDelegationNotSupportedFileType => {
-                OpenNoneDelegation::WriteDelegationNotSupportedFileType
+                Self::WriteDelegationNotSupportedFileType
             }
-            WhyNoDelegation::NotSupportedUpgrade => {
-                OpenNoneDelegation::NotSupportedUpgrade
-            }
+            WhyNoDelegation::NotSupportedUpgrade => Self::NotSupportedUpgrade,
             WhyNoDelegation::NotSupportedDowngrade => {
-                OpenNoneDelegation::NotSupportedDowngrade
+                Self::NotSupportedDowngrade
             }
-            WhyNoDelegation::Cancelled => OpenNoneDelegation::Cancelled,
-            WhyNoDelegation::IsDirectory => OpenNoneDelegation::IsDirectory,
+            WhyNoDelegation::Cancelled => Self::Cancelled,
+            WhyNoDelegation::IsDirectory => Self::IsDirectory,
         };
 
         Ok(delegation)
@@ -2660,18 +2661,18 @@ impl XdrDeserialize for OpenDelegation {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let delegation_type = OpenDelegationType::deserialize(src)?;
         let delegation = match delegation_type {
-            OpenDelegationType::None => OpenDelegation::None,
+            OpenDelegationType::None => Self::None,
             OpenDelegationType::Read => {
                 let delegation = OpenReadDelegation::deserialize(src)?;
-                OpenDelegation::Read(delegation)
+                Self::Read(delegation)
             }
             OpenDelegationType::Write => {
                 let delegation = OpenWriteDelegation::deserialize(src)?;
-                OpenDelegation::Write(delegation)
+                Self::Write(delegation)
             }
             OpenDelegationType::NoneExt => {
                 let delegation = OpenNoneDelegation::deserialize(src)?;
-                OpenDelegation::NoneExt(delegation)
+                Self::NoneExt(delegation)
             }
         };
 
@@ -3257,9 +3258,9 @@ impl XdrDeserialize for SecurityInfo {
         let flavor = u32::deserialize(src)?;
         let secinfo = if flavor == RPCSEC_GSS {
             let info = RpcSecGssInfo::deserialize(src)?;
-            SecurityInfo::RpcSecGss(info)
+            Self::RpcSecGss(info)
         } else {
-            SecurityInfo::Unknown
+            Self::Unknown
         };
 
         Ok(secinfo)
@@ -3591,16 +3592,16 @@ impl XdrDeserialize for CallbackSecurityParameters {
         let flavor = AuthFlavor::deserialize(src)?;
 
         let params = match flavor {
-            AuthFlavor::Null => CallbackSecurityParameters::None,
+            AuthFlavor::Null => Self::None,
             AuthFlavor::Unix => {
                 let auth = AuthUnix::deserialize(src)?;
-                CallbackSecurityParameters::Sys(auth)
+                Self::Sys(auth)
             }
             AuthFlavor::RpcSecGss => {
                 let handles = GssCallbackHandles::deserialize(src)?;
-                CallbackSecurityParameters::RpcSecGss(handles)
+                Self::RpcSecGss(handles)
             }
-            _ => {
+            AuthFlavor::Short | AuthFlavor::Des => {
                 return Err(std::io::Error::other(format!(
                     "Invalid authentication flavor for CallbackSecurityParameters: {flavor:?}"
                 )));
@@ -3826,14 +3827,14 @@ impl XdrDeserialize for StateProtectionArg {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let how = StateProtectHow::deserialize(src)?;
         let arg = match how {
-            StateProtectHow::None => StateProtectionArg::None,
+            StateProtectHow::None => Self::None,
             StateProtectHow::MachineCredentials => {
                 let ops = StateProtectOps::deserialize(src)?;
-                StateProtectionArg::MachineCredentials(ops)
+                Self::MachineCredentials(ops)
             }
             StateProtectHow::Ssv => {
                 let parameters = SsvStateProtectParameters::deserialize(src)?;
-                StateProtectionArg::Ssv(parameters)
+                Self::Ssv(parameters)
             }
         };
 
@@ -3926,14 +3927,14 @@ pub enum StateProtectionResult {
 impl XdrSerialize for StateProtectionResult {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         match self {
-            StateProtectionResult::None => {
+            Self::None => {
                 StateProtectHow::None.serialize(dest)?;
             }
-            StateProtectionResult::MachineCredentials(ops) => {
+            Self::MachineCredentials(ops) => {
                 StateProtectHow::MachineCredentials.serialize(dest)?;
                 ops.serialize(dest)?;
             }
-            StateProtectionResult::Ssv(info) => {
+            Self::Ssv(info) => {
                 StateProtectHow::Ssv.serialize(dest)?;
                 info.serialize(dest)?;
             }
@@ -3947,14 +3948,14 @@ impl XdrDeserialize for StateProtectionResult {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let how = StateProtectHow::deserialize(src)?;
         let result = match how {
-            StateProtectHow::None => StateProtectionResult::None,
+            StateProtectHow::None => Self::None,
             StateProtectHow::MachineCredentials => {
                 let ops = StateProtectOps::deserialize(src)?;
-                StateProtectionResult::MachineCredentials(ops)
+                Self::MachineCredentials(ops)
             }
             StateProtectHow::Ssv => {
                 let info = SsvProtectionInfo::deserialize(src)?;
-                StateProtectionResult::Ssv(info)
+                Self::Ssv(info)
             }
         };
 
@@ -4300,11 +4301,11 @@ impl XdrDeserialize for GetDirectoryDelegationNonFatal {
         let result = match status {
             GetDirectoryDelegationStatus::Ok => {
                 let ok = GetDirectoryDelegationOk::deserialize(src)?;
-                GetDirectoryDelegationNonFatal::Ok(ok)
+                Self::Ok(ok)
             }
             GetDirectoryDelegationStatus::Unavailable => {
                 let will_signal = bool::deserialize(src)?;
-                GetDirectoryDelegationNonFatal::Unavailable(will_signal)
+                Self::Unavailable(will_signal)
             }
         };
 
@@ -4497,9 +4498,9 @@ impl XdrDeserialize for NewTime {
 
         if changed {
             let time = NfsTime::deserialize(src)?;
-            Ok(NewTime::Changed(time))
+            Ok(Self::Changed(time))
         } else {
-            Ok(NewTime::Unchanged)
+            Ok(Self::Unchanged)
         }
     }
 }
@@ -4531,9 +4532,9 @@ impl XdrDeserialize for NewOffset {
 
         if changed {
             let offset = Offset::deserialize(src)?;
-            Ok(NewOffset::Changed(offset))
+            Ok(Self::Changed(offset))
         } else {
-            Ok(NewOffset::Unchanged)
+            Ok(Self::Unchanged)
         }
     }
 }
@@ -4607,9 +4608,9 @@ impl XdrDeserialize for NewSize {
 
         if changed {
             let length = Length::deserialize(src)?;
-            Ok(NewSize::Changed(length))
+            Ok(Self::Changed(length))
         } else {
-            Ok(NewSize::Unchanged)
+            Ok(Self::Unchanged)
         }
     }
 }
@@ -4696,7 +4697,7 @@ impl XdrSerialize for LayoutGetOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.return_on_close.serialize(dest)?;
         self.state_id.serialize(dest)?;
-        xdr::serialize_vec(dest, &self.layout);
+        xdr::serialize_vec(dest, &self.layout)?;
 
         Ok(())
     }
@@ -4802,9 +4803,9 @@ impl XdrDeserialize for LayoutReturnReturn {
 
         if with_state_id {
             let state_id = StateId::deserialize(src)?;
-            Ok(LayoutReturnReturn::WithStateId(state_id))
+            Ok(Self::WithStateId(state_id))
         } else {
-            Ok(LayoutReturnReturn::WithoutStateId)
+            Ok(Self::WithoutStateId)
         }
     }
 }
@@ -5059,13 +5060,14 @@ impl XdrDeserialize for DelegationClaim {
         let claim = match claim_type {
             OpenClaimType::Previous => {
                 let delegation = OpenDelegationType::deserialize(src)?;
-                DelegationClaim::Previous(delegation)
+                Self::Previous(delegation)
             }
-            OpenClaimType::CurrentFh => DelegationClaim::CurrentFh,
-            OpenClaimType::PreviousDelegateFh => {
-                DelegationClaim::PreviousDelegateFh
-            }
-            _ => DelegationClaim::Invalid(claim_type),
+            OpenClaimType::CurrentFh => Self::CurrentFh,
+            OpenClaimType::PreviousDelegateFh => Self::PreviousDelegateFh,
+            OpenClaimType::Null
+            | OpenClaimType::CurrentDelegate
+            | OpenClaimType::PreviousDelegate
+            | OpenClaimType::CurrentDelegateFh => Self::Invalid(claim_type),
         };
 
         Ok(claim)

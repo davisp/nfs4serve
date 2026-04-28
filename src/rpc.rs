@@ -3,7 +3,7 @@ use std::io::{Cursor, Read, Write};
 use anyhow::{Context as _, Result, anyhow};
 use num_derive::{FromPrimitive, ToPrimitive};
 
-use crate::nfs::{self, NfsStatus};
+use crate::nfs;
 use crate::xdr::{self, XdrDeserialize, XdrSerialize};
 
 pub struct RpcHandler {
@@ -55,31 +55,26 @@ impl RpcHandler {
                         call.rpc_version
                     );
 
-                    self.write(RpcMessage::rpc_version_mismatch_reply(
+                    self.write(&RpcMessage::rpc_version_mismatch_reply(
                         mesg.xid,
                     ))?;
                     return Ok(self.writer.into_inner());
                 }
 
                 if call.program == nfs::PROGRAM {
-                    nfs::handle(&mut self, call, auth)?;
-                    Ok(self.writer.into_inner())
+                    nfs::handle(&mut self, &call, auth)?;
+                    return Ok(self.writer.into_inner());
                 } else if call.program == nfs::PROGRAM_ACL
                     || call.program == nfs::PROGRAM_ID_MAP
                     || call.program == nfs::PROGRAM_METADATA
                 {
                     log::trace!("Ignoring NFS ACL RPC calls: {:?}", mesg.xid);
-                    self.write(RpcMessage::program_unavailable_reply(
-                        mesg.xid,
-                    ))?;
-                    Ok(self.writer.into_inner())
                 } else {
                     log::warn!("Unknown RPC program number: {}", call.program);
-                    self.write(RpcMessage::program_unavailable_reply(
-                        mesg.xid,
-                    ))?;
-                    Ok(self.writer.into_inner())
                 }
+
+                self.write(&RpcMessage::program_unavailable_reply(mesg.xid))?;
+                Ok(self.writer.into_inner())
             }
             RpcBody::Reply(mesg) => {
                 log::error!(
@@ -88,26 +83,6 @@ impl RpcHandler {
                 Err(anyhow!("Bad RPC Reply message received from client."))
             }
         }
-    }
-
-    pub fn nfs_reply(
-        &self,
-        status: NfsStatus,
-        tag: Vec<u8>,
-        op_results: Vec<NfsOpResult>,
-    ) -> Result<()> {
-        self.write(self.success())
-            .context("Error starting successful RPC response.")?;
-
-        self.write(status)
-            .context("Error writing NFS compound status.")?;
-
-        self.write(tag).context("Error writing NFS compound tag.")?;
-
-        self.write(op_results)
-            .context("Error writing NFS operation results.")?;
-
-        Ok(())
     }
 
     pub fn success(&self) -> RpcMessage {
@@ -119,7 +94,7 @@ impl RpcHandler {
             .context("Error reading value from message frame.")
     }
 
-    pub fn write<Value: XdrSerialize>(&mut self, val: Value) -> Result<()> {
+    pub fn write<Value: XdrSerialize>(&mut self, val: &Value) -> Result<()> {
         val.serialize(&mut self.writer)
             .context("Error serializing value to result frame.")
     }

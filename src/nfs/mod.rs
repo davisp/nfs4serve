@@ -1,6 +1,6 @@
 use anyhow::{Context as _, Result};
 use num_derive::{FromPrimitive, ToPrimitive};
-use num_traits::cast::FromPrimitive;
+use num_traits::cast::FromPrimitive as _;
 
 use crate::rpc::{AuthUnix, RpcBodyCall, RpcHandler, RpcMessage};
 
@@ -15,7 +15,7 @@ pub use status::NfsStatus;
 
 pub fn handle(
     rpc: &mut RpcHandler,
-    call: RpcBodyCall,
+    call: &RpcBodyCall,
     _auth: Option<AuthUnix>,
 ) -> Result<()> {
     if call.version != VERSION {
@@ -23,7 +23,7 @@ pub fn handle(
             "Client attempted an unsupported version of NFS: {} != {VERSION}",
             call.version
         );
-        rpc.write(RpcMessage::program_mismatch_reply(rpc.xid(), VERSION))?;
+        rpc.write(&RpcMessage::program_mismatch_reply(rpc.xid(), VERSION))?;
         return Ok(());
     }
 
@@ -34,7 +34,7 @@ pub fn handle(
 
     match prog {
         NfsProgram::Null => {
-            rpc.write(rpc.success())?;
+            rpc.write(&rpc.success())?;
             Ok(())
         }
         NfsProgram::Compound => {
@@ -44,14 +44,19 @@ pub fn handle(
             let version = rpc
                 .read::<u32>()
                 .context("Error reading compound minor version.")?;
+
             if version != VERSION_MINOR {
-                rpc.nfs_reply(NfsStatus::MinorVersionMismatch, tag, vec![])?;
+                rpc.write(&NfsStatus::MinorVersionMismatch)?;
+                rpc.write(&tag)?;
+                rpc.write(&0u32)?;
+
+                return Ok(());
             }
 
             todo!();
         }
         NfsProgram::Invalid => {
-            rpc.write(RpcMessage::procedure_unavailable_reply(rpc.xid()))?;
+            rpc.write(&RpcMessage::procedure_unavailable_reply(rpc.xid()))?;
             Ok(())
         }
     }

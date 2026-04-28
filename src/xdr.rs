@@ -136,6 +136,7 @@ impl XdrDeserialize for Vec<u8> {
 
 impl XdrSerialize for Vec<Vec<u8>> {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
+        #[expect(clippy::cast_possible_truncation, reason = "Yep.")]
         (self.len() as u32).serialize(dest)?;
         for part in self {
             part.serialize(dest)?;
@@ -148,7 +149,7 @@ impl XdrSerialize for Vec<Vec<u8>> {
 impl XdrDeserialize for Vec<Vec<u8>> {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let length = u32::deserialize(src)?;
-        let mut ret = Vec::new();
+        let mut ret = Self::new();
 
         for _ in 0..length {
             ret.push(Vec::<u8>::deserialize(src)?);
@@ -227,7 +228,7 @@ impl<const N: usize> XdrDeserialize for MaxLenBytes<N> {
             );
         }
 
-        Ok(MaxLenBytes(ret))
+        Ok(Self(ret))
     }
 }
 
@@ -358,7 +359,7 @@ macro_rules! serde_enum {
 
 pub(crate) use serde_enum;
 
-/// Serialize a vector of things that implement XdrSerialize.
+/// Serialize a vector of things that implement `XdrSerialize`.
 ///
 /// Do *NOT* use this for Vec<u8> because this function does not implement
 /// padding bytes as required. Although, you can use this on Vec<Vec<u8>> just
@@ -367,6 +368,7 @@ pub fn serialize_vec<W: Write, T: XdrSerialize>(
     dest: &mut W,
     data: &[T],
 ) -> std::io::Result<()> {
+    #[expect(clippy::cast_possible_truncation, reason = "Yep.")]
     (data.len() as u32).serialize(dest)?;
     for item in data {
         item.serialize(dest)?;
@@ -375,9 +377,9 @@ pub fn serialize_vec<W: Write, T: XdrSerialize>(
     Ok(())
 }
 
-/// Deserialze a vector of things that implement XdrDeserialize.
+/// Deserialze a vector of things that implement `XdrDeserialize`.
 ///
-/// See serialize_vec, don't use this for Vec<u8> values.
+/// See `serialize_vec`, don't use this for Vec<u8> values.
 pub fn deserialize_vec<R: Read, T: XdrDeserialize>(
     src: &mut R,
 ) -> std::io::Result<Vec<T>> {
@@ -391,24 +393,25 @@ pub fn deserialize_vec<R: Read, T: XdrDeserialize>(
     Ok(ret)
 }
 
-/// Serialize a vector of vectors of things that implement XdrSerialize.
+/// Serialize a vector of vectors of things that implement `XdrSerialize`.
 ///
-/// Don't use this when T = u8. Use the trait based versions. See serialize_vec
+/// Don't use this when T = u8. Use the trait based versions. See `serialize_vec`
 pub fn serialize_vec_vec<W: Write, T: XdrSerialize>(
     dest: &mut W,
     data: &[Vec<T>],
 ) -> std::io::Result<()> {
+    #[expect(clippy::cast_possible_truncation, reason = "Yep.")]
     (data.len() as u32).serialize(dest)?;
     for items in data {
-        serialize_vec(dest, &items)?;
+        serialize_vec(dest, items)?;
     }
 
     Ok(())
 }
 
-/// Deserialze a vector of vectors of things that implement XdrDeserialize.
+/// Deserialze a vector of vectors of things that implement `XdrDeserialize`.
 ///
-/// See serialize_vec, don't use this for u8 values.
+/// See `serialize_vec`, don't use this for u8 values.
 pub fn deserialize_vec_vec<R: Read, T: XdrDeserialize>(
     src: &mut R,
 ) -> std::io::Result<Vec<Vec<T>>> {
