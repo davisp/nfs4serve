@@ -6,4 +6,4 @@ mod server;
 mod tcp;
 mod xdr;
 
-pub use crate::server::NFSv4Server;
+pub use crate::server::NFSv41Server;

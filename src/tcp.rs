@@ -8,7 +8,6 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 
-use crate::rpc::RpcHandler;
 use crate::xdr::{XdrDeserialize as _, XdrSerialize as _};
 
 const RPC_LAST_FRAME: u32 = 0x80_00_00_00;
@@ -22,38 +21,26 @@ pub struct TcpConnection {
 }
 
 impl TcpConnection {
-    pub fn new(socket: TcpStream, address: SocketAddr) -> Result<Self> {
-        // The socket should already be non-blocking, but we set it here just
-        // to be certain.
-        socket
-            .set_nodelay(true)
-            .context("Error setting nodelay on client socket.")?;
-
+    pub fn new(socket: TcpStream, address: SocketAddr) -> Self {
         let (reader, writer) = socket.into_split();
 
-        Ok(Self {
+        Self {
             address,
             reader: ConnectionReader::new(reader),
             writer: ConnectionWriter::new(writer),
-        })
+        }
     }
 
-    pub async fn handle(mut self) -> Result<()> {
-        log::info!("Client connected: {:?}", self.address);
-        loop {
-            let Some(frame) = self.reader.recv().await else {
-                return Err(anyhow!("Client disconnected: {:?}", self.address));
-            };
+    pub async fn read(&mut self) -> Result<Vec<u8>> {
+        let Some(frame) = self.reader.recv().await else {
+            return Err(anyhow!("Client disconnected: {:?}", self.address));
+        };
 
-            let rbuf = Cursor::new(frame);
-            let wbuf = Cursor::new(Vec::new());
+        Ok(frame)
+    }
 
-            let result = RpcHandler::new(rbuf, wbuf)
-                .run()
-                .context("Error handling RPC message.")?;
-
-            self.writer.send(result).await?;
-        }
+    pub async fn send(&self, data: Vec<u8>) -> Result<()> {
+        self.writer.send(data).await
     }
 }
 

@@ -1355,6 +1355,8 @@ pub struct AccessOk {
     access: u32,
 }
 
+impl AsNfsStatus for AccessOk {}
+
 impl XdrSerialize for AccessOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.supported.serialize(dest)?;
@@ -1401,7 +1403,29 @@ impl XdrDeserialize for CloseArgs {
     }
 }
 
-pub type CloseResult = Result<StateId, NfsStatus>;
+pub struct CloseOk {
+    state_id: StateId,
+}
+
+impl AsNfsStatus for CloseOk {}
+
+impl XdrSerialize for CloseOk {
+    fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
+        self.state_id.serialize(dest)?;
+
+        Ok(())
+    }
+}
+
+impl XdrDeserialize for CloseOk {
+    fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
+        let state_id = StateId::deserialize(src)?;
+
+        Ok(Self { state_id })
+    }
+}
+
+pub type CloseResult = Result<CloseOk, NfsStatus>;
 
 pub struct CommitArgs {
     offset: Offset,
@@ -1429,6 +1453,8 @@ impl XdrDeserialize for CommitArgs {
 pub struct CommitOk {
     verifier: Verifier,
 }
+
+impl AsNfsStatus for CommitOk {}
 
 impl XdrSerialize for CommitOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -1546,6 +1572,8 @@ pub struct CreateOk {
     attrset: BitMap,
 }
 
+impl AsNfsStatus for CreateOk {}
+
 impl XdrSerialize for CreateOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.change_info.serialize(dest)?;
@@ -1639,6 +1667,8 @@ pub struct GetAttributesOk {
     attributes: FileAttrs,
 }
 
+impl AsNfsStatus for GetAttributesOk {}
+
 impl XdrSerialize for GetAttributesOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.attributes.serialize(dest)?;
@@ -1660,6 +1690,8 @@ pub type GetAttributesResult = Result<GetAttributesOk, NfsStatus>;
 pub struct GetFhOk {
     object: NfsFh,
 }
+
+impl AsNfsStatus for GetFhOk {}
 
 impl XdrSerialize for GetFhOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -1702,6 +1734,8 @@ impl XdrDeserialize for LinkArgs {
 pub struct LinkOk {
     change_info: ChangeInfo,
 }
+
+impl AsNfsStatus for LinkOk {}
 
 impl XdrSerialize for LinkOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -1856,6 +1890,8 @@ pub struct LockOk {
     state_id: StateId,
 }
 
+impl AsNfsStatus for LockOk {}
+
 impl XdrSerialize for LockOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.state_id.serialize(dest)?;
@@ -1970,6 +2006,15 @@ pub enum LockTestReturn {
     Denied(LockDenied),
 }
 
+impl AsNfsStatus for LockTestReturn {
+    fn as_status(&self) -> NfsStatus {
+        match self {
+            Self::Ok => NfsStatus::Ok,
+            Self::Denied(_) => NfsStatus::Denied,
+        }
+    }
+}
+
 impl XdrSerialize for LockTestReturn {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         match self {
@@ -2019,7 +2064,29 @@ impl XdrDeserialize for LockReleaseArgs {
     }
 }
 
-pub type LockReleaseResult = Result<StateId, NfsStatus>;
+pub struct LockReleaseOk {
+    state_id: StateId,
+}
+
+impl XdrSerialize for LockReleaseOk {
+    fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
+        self.state_id.serialize(dest)?;
+
+        Ok(())
+    }
+}
+
+impl AsNfsStatus for LockReleaseOk {}
+
+impl XdrDeserialize for LockReleaseOk {
+    fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
+        let state_id = StateId::deserialize(src)?;
+
+        Ok(Self { state_id })
+    }
+}
+
+pub type LockReleaseResult = Result<LockReleaseOk, NfsStatus>;
 
 pub struct LookupArgs {
     object_name: Component,
@@ -2722,6 +2789,8 @@ pub struct OpenOk {
     delegation: OpenDelegation,
 }
 
+impl AsNfsStatus for OpenOk {}
+
 impl XdrSerialize for OpenOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.state_id.serialize(dest)?;
@@ -2834,6 +2903,8 @@ pub struct OpenDowngradeOk {
     open_state_id: StateId,
 }
 
+impl AsNfsStatus for OpenDowngradeOk {}
+
 impl XdrSerialize for OpenDowngradeOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.open_state_id.serialize(dest)?;
@@ -2912,6 +2983,8 @@ pub struct ReadOk {
     eof: bool,
     data: XdrOpaque,
 }
+
+impl AsNfsStatus for ReadOk {}
 
 impl XdrSerialize for ReadOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -3029,11 +3102,36 @@ pub struct ReadDirectoryOk {
     reply: DirectoryList,
 }
 
+impl AsNfsStatus for ReadDirectoryOk {}
+
+impl XdrSerialize for ReadDirectoryOk {
+    fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
+        self.cookie_verifier.serialize(dest)?;
+        self.reply.serialize(dest)?;
+
+        Ok(())
+    }
+}
+
+impl XdrDeserialize for ReadDirectoryOk {
+    fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
+        let cookie_verifier = Verifier::deserialize(src)?;
+        let reply = DirectoryList::deserialize(src)?;
+
+        Ok(Self {
+            cookie_verifier,
+            reply,
+        })
+    }
+}
+
 pub type ReadDirectoryResult = Result<ReadDirectoryOk, NfsStatus>;
 
 pub struct ReadLinkOk {
     link: LinkText,
 }
+
+impl AsNfsStatus for ReadLinkOk {}
 
 impl XdrSerialize for ReadLinkOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -3076,6 +3174,8 @@ impl XdrDeserialize for RemoveArgs {
 pub struct RemoveOk {
     change_info: ChangeInfo,
 }
+
+impl AsNfsStatus for RemoveOk {}
 
 impl XdrSerialize for RemoveOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -3122,6 +3222,8 @@ pub struct RenameOk {
     source_change_info: ChangeInfo,
     target_change_info: ChangeInfo,
 }
+
+impl AsNfsStatus for RenameOk {}
 
 impl XdrSerialize for RenameOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -3267,6 +3369,8 @@ impl XdrDeserialize for SecurityInfo {
 
 pub struct SecurityInfoOk(Vec<SecurityInfo>);
 
+impl AsNfsStatus for SecurityInfoOk {}
+
 impl XdrSerialize for SecurityInfoOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         xdr::serialize_vec(dest, &self.0)?;
@@ -3314,6 +3418,20 @@ impl XdrDeserialize for SetAttributesArgs {
 pub struct SetAttributesResult {
     status: NfsStatus,
     attrsset: BitMap,
+}
+
+impl AsNfsStatus for SetAttributesResult {
+    fn as_status(&self) -> NfsStatus {
+        self.status
+    }
+}
+
+impl XdrSerialize for SetAttributesResult {
+    fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
+        self.attrsset.serialize(dest)?;
+
+        Ok(())
+    }
 }
 
 /// Obsolete in NFSv4.1
@@ -3475,6 +3593,8 @@ pub struct WriteOk {
     committed: StableHow,
     write_verifier: Verifier,
 }
+
+impl AsNfsStatus for WriteOk {}
 
 impl XdrSerialize for WriteOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -3693,6 +3813,8 @@ pub struct BindConnectionToSessionOk {
     channel_direction_from_server: ChannelDirectionFromServer,
     use_conn_in_rdma: bool,
 }
+
+impl AsNfsStatus for BindConnectionToSessionOk {}
 
 impl XdrSerialize for BindConnectionToSessionOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -3971,6 +4093,8 @@ pub struct ExchangeIdOk {
     server_impl_id: Option<NfsImplId>,
 }
 
+impl AsNfsStatus for ExchangeIdOk {}
+
 impl XdrSerialize for ExchangeIdOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.client_id.serialize(dest)?;
@@ -4108,6 +4232,8 @@ pub struct CreateSessionOk {
     fore_channel_attrs: ChannelAttrs,
     back_channel_attrs: ChannelAttrs,
 }
+
+impl AsNfsStatus for CreateSessionOk {}
 
 impl XdrSerialize for CreateSessionOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -4276,6 +4402,15 @@ pub enum GetDirectoryDelegationNonFatal {
     Unavailable(bool),
 }
 
+impl AsNfsStatus for GetDirectoryDelegationNonFatal {
+    fn as_status(&self) -> NfsStatus {
+        match self {
+            Self::Ok(_) => NfsStatus::Ok,
+            Self::Unavailable(_) => NfsStatus::DirDelegationUnavailable,
+        }
+    }
+}
+
 impl XdrSerialize for GetDirectoryDelegationNonFatal {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         match self {
@@ -4439,6 +4574,8 @@ pub struct GetDeviceListOk {
     device_ids: Vec<DeviceId>,
     eof: bool,
 }
+
+impl AsNfsStatus for GetDeviceListOk {}
 
 impl XdrSerialize for GetDeviceListOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -4617,6 +4754,8 @@ pub struct LayoutCommitOk {
     new_size: NewSize,
 }
 
+impl AsNfsStatus for LayoutCommitOk {}
+
 impl XdrSerialize for LayoutCommitOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.new_size.serialize(dest)?;
@@ -4690,6 +4829,8 @@ pub struct LayoutGetOk {
     state_id: StateId,
     layout: Vec<Layout>,
 }
+
+impl AsNfsStatus for LayoutGetOk {}
 
 impl XdrSerialize for LayoutGetOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -4779,6 +4920,8 @@ pub enum LayoutReturnReturn {
     WithoutStateId,
 }
 
+impl AsNfsStatus for LayoutReturnReturn {}
+
 impl XdrSerialize for LayoutReturnReturn {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         match self {
@@ -4818,7 +4961,7 @@ pub enum SecurityInfoNoNameStyle {
 }
 xdr::serde_enum!(SecurityInfoNoNameStyle);
 
-pub type SecurityInfoNoName = SecurityInfoNoNameStyle;
+pub type SecurityInfoNoNameArgs = SecurityInfoNoNameStyle;
 
 pub type SecurityInfoNoNameResult = SecurityInfoResult;
 
@@ -4867,6 +5010,8 @@ pub struct SequenceOk {
     highest_slot_id: SlotId,
     status_flags: u32,
 }
+
+impl AsNfsStatus for SequenceOk {}
 
 impl XdrSerialize for SequenceOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
@@ -4951,6 +5096,8 @@ pub struct SetSsvOk {
     digest: XdrOpaque,
 }
 
+impl AsNfsStatus for SetSsvOk {}
+
 impl XdrSerialize for SetSsvOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.digest.serialize(dest)?;
@@ -4993,6 +5140,8 @@ pub struct TestStateIdsOk {
     state_ids: Vec<StateId>,
 }
 
+impl AsNfsStatus for TestStateIdsOk {}
+
 impl XdrSerialize for TestStateIdsOk {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         xdr::serialize_vec(dest, &self.state_ids)?;
@@ -5010,16 +5159,6 @@ impl XdrDeserialize for TestStateIdsOk {
 }
 
 pub type TestStateIdsResult = Result<TestStateIdsOk, NfsStatus>;
-
-// pub enum OpenClaimType {
-//     Null = 0,
-//     Previous = 1,
-//     CurrentDelegate = 2,
-//     PreviousDelegate = 3,
-//     CurrentFh = 4,
-//     CurrentDelegateFh = 5,
-//     PreviousDelegateFh = 6,
-// }
 
 pub enum DelegationClaim {
     Previous(OpenDelegationType),
@@ -5095,7 +5234,29 @@ impl XdrDeserialize for WantDelegationArgs {
     }
 }
 
-pub type WantDelegationResult = Result<OpenDelegation, NfsStatus>;
+pub struct WantDelegationOk {
+    open_delegation: OpenDelegation,
+}
+
+impl AsNfsStatus for WantDelegationOk {}
+
+impl XdrSerialize for WantDelegationOk {
+    fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
+        self.open_delegation.serialize(dest)?;
+
+        Ok(())
+    }
+}
+
+impl XdrDeserialize for WantDelegationOk {
+    fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
+        let open_delegation = OpenDelegation::deserialize(src)?;
+
+        Ok(Self { open_delegation })
+    }
+}
+
+pub type WantDelegationResult = Result<WantDelegationOk, NfsStatus>;
 
 pub struct DestroyClientIdArgs {
     client_id: ClientId,

@@ -1,5 +1,6 @@
 use num_derive::{FromPrimitive, ToPrimitive};
 
+use crate::nfs::AsNfsStatus;
 use crate::xdr::{self, XdrDeserialize, XdrSerialize};
 
 /// NFS Status Codes
@@ -27,7 +28,7 @@ pub enum NfsStatus {
     EDQUOT = 69,                            // hard quota limit reached
     ESTALE = 70,                            // file no longer exists
     EBADHANDLE = 10001,                     // Illegal filehandle
-    BadCooki = 10003,                       // READDIR cookie is stale
+    BadCookie = 10003,                      // READDIR cookie is stale
     NotSupported = 10004,                   // operation not supported
     TooSmall = 10005,                       // response limit exceeded
     ServerFault = 10006,                    // undefined server error
@@ -113,3 +114,9 @@ pub enum NfsStatus {
 }
 
 xdr::serde_enum!(NfsStatus);
+
+impl AsNfsStatus for NfsStatus {
+    fn as_status(&self) -> Self {
+        *self
+    }
+}

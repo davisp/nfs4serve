@@ -42,8 +42,9 @@ suspicious = { level = "deny", priority = -1 }
 blanket_clippy_restriction_lints = "allow"
 
 # Project Specific
-wildcard_imports = "allow"   # I'm not gonna type all the names out.
-missing_errors_doc = "allow" # For now, I'm just using anyhow
+needless_pass_by_value = "allow" # This annoys me.
+wildcard_imports = "allow"       # I'm not gonna type all the names out.
+missing_errors_doc = "allow"     # For now, I'm just using anyhow
 
 # Dev mode - Comment these out before a release
 exhaustive_structs = "allow"

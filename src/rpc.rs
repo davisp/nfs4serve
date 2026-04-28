@@ -1,23 +1,124 @@
 use std::io::{Cursor, Read, Write};
+use std::net::SocketAddr;
 
 use anyhow::{Context as _, Result, anyhow};
 use num_derive::{FromPrimitive, ToPrimitive};
+use tokio::net::TcpStream;
 
 use crate::nfs;
+use crate::tcp::TcpConnection;
 use crate::xdr::{self, XdrDeserialize, XdrSerialize};
 
-pub struct RpcHandler {
+pub struct RpcConnection {
+    conn: TcpConnection,
+}
+
+impl RpcConnection {
+    pub fn new(conn: TcpStream, addr: SocketAddr) -> Self {
+        Self {
+            conn: TcpConnection::new(conn, addr),
+        }
+    }
+
+    pub async fn read(&mut self) -> Result<RpcContext> {
+        loop {
+            let frame = self
+                .conn
+                .read()
+                .await
+                .context("Error reading RPC Framed Message.")?;
+
+            let mut reader = Cursor::new(frame);
+
+            let mesg = RpcMessage::deserialize(&mut reader)
+                .context("Error decoding base RPC message.")?;
+
+            let call = match mesg.body {
+                RpcBody::Call(call) => call,
+                RpcBody::Reply(mesg) => {
+                    log::error!(
+                        "Client sent an RPC Reply instead of a Call: {mesg:#?}",
+                    );
+                    return Err(anyhow!(
+                        "Bad RPC Reply message received from client."
+                    ));
+                }
+            };
+
+            let auth = if matches!(call.credentials.flavor, AuthFlavor::Unix) {
+                Some(
+                    AuthUnix::deserialize(&mut Cursor::new(
+                        &call.credentials.body,
+                    ))
+                    .context(
+                        "Error deserialize unix authentication in call body.",
+                    )?,
+                )
+            } else {
+                None
+            };
+
+            let mut ctx = RpcContext::new(mesg.xid, call, auth, reader);
+
+            if ctx.call.rpc_version != 2 {
+                log::warn!(
+                    "Invalid RPC version sent by client: {} != 2",
+                    ctx.call.rpc_version
+                );
+
+                ctx.write(&RpcMessage::rpc_version_mismatch_reply(ctx.xid))?;
+                self.send(ctx).await?;
+                continue;
+            }
+
+            if ctx.call.program == nfs::PROGRAM {
+                return Ok(ctx);
+            }
+
+            if ctx.call.program == nfs::PROGRAM_ACL
+                || ctx.call.program == nfs::PROGRAM_ID_MAP
+                || ctx.call.program == nfs::PROGRAM_METADATA
+            {
+                log::trace!("Ignoring NFS ACL RPC calls: {:?}", mesg.xid);
+            } else {
+                log::warn!("Unknown RPC program number: {}", ctx.call.program);
+            }
+
+            ctx.write(&RpcMessage::program_unavailable_reply(ctx.xid))?;
+            self.send(ctx).await?;
+        }
+    }
+
+    pub async fn send(&self, ctx: RpcContext) -> Result<()> {
+        let data = ctx.writer.into_inner();
+        self.conn
+            .send(data)
+            .await
+            .context("Error sending RPC response.")
+    }
+}
+
+pub struct RpcContext {
     xid: u32,
+    call: RpcBodyCall,
+    auth: Option<AuthUnix>,
     reader: Cursor<Vec<u8>>,
     writer: Cursor<Vec<u8>>,
 }
 
-impl RpcHandler {
-    pub fn new(reader: Cursor<Vec<u8>>, writer: Cursor<Vec<u8>>) -> Self {
+impl RpcContext {
+    fn new(
+        xid: u32,
+        call: RpcBodyCall,
+        auth: Option<AuthUnix>,
+        reader: Cursor<Vec<u8>>,
+    ) -> Self {
         Self {
-            xid: 0,
+            xid,
+            call,
+            auth,
             reader,
-            writer,
+            writer: Cursor::new(Vec::new()),
         }
     }
 
@@ -25,78 +126,28 @@ impl RpcHandler {
         self.xid
     }
 
-    pub fn run(mut self) -> Result<Vec<u8>> {
-        let mesg = RpcMessage::deserialize(&mut self.reader)
-            .context("Error decoding base RPC message.")?;
+    pub fn call(&self) -> &RpcBodyCall {
+        &self.call
+    }
 
-        self.xid = mesg.xid;
+    pub fn read<T: XdrDeserialize>(&mut self) -> std::io::Result<T> {
+        T::deserialize(&mut self.reader)
+    }
 
-        match mesg.body {
-            RpcBody::Call(call) => {
-                let auth = if matches!(
-                    call.credentials.flavor,
-                    AuthFlavor::Unix
-                ) {
-                    Some(
-                        AuthUnix::deserialize(&mut Cursor::new(
-                            &call.credentials.body,
-                        ))
-                        .context(
-                            "Error deserialize unix authentication in call body.",
-                        )?,
-                    )
-                } else {
-                    None
-                };
-
-                if call.rpc_version != 2 {
-                    log::warn!(
-                        "Invalid RPC version sent by client: {} != 2",
-                        call.rpc_version
-                    );
-
-                    self.write(&RpcMessage::rpc_version_mismatch_reply(
-                        mesg.xid,
-                    ))?;
-                    return Ok(self.writer.into_inner());
-                }
-
-                if call.program == nfs::PROGRAM {
-                    nfs::handle(&mut self, &call, auth)?;
-                    return Ok(self.writer.into_inner());
-                } else if call.program == nfs::PROGRAM_ACL
-                    || call.program == nfs::PROGRAM_ID_MAP
-                    || call.program == nfs::PROGRAM_METADATA
-                {
-                    log::trace!("Ignoring NFS ACL RPC calls: {:?}", mesg.xid);
-                } else {
-                    log::warn!("Unknown RPC program number: {}", call.program);
-                }
-
-                self.write(&RpcMessage::program_unavailable_reply(mesg.xid))?;
-                Ok(self.writer.into_inner())
-            }
-            RpcBody::Reply(mesg) => {
-                log::error!(
-                    "Client sent an RPC Reply instead of a Call: {mesg:#?}",
-                );
-                Err(anyhow!("Bad RPC Reply message received from client."))
-            }
-        }
+    pub fn write<T: XdrSerialize>(&mut self, val: &T) -> std::io::Result<()> {
+        val.serialize(&mut self.writer)
     }
 
     pub fn success(&self) -> RpcMessage {
         RpcMessage::successful_reply(self.xid)
     }
 
-    pub fn read<Value: XdrDeserialize>(&mut self) -> Result<Value> {
-        Value::deserialize(&mut self.reader)
-            .context("Error reading value from message frame.")
-    }
-
-    pub fn write<Value: XdrSerialize>(&mut self, val: &Value) -> Result<()> {
-        val.serialize(&mut self.writer)
-            .context("Error serializing value to result frame.")
+    /// Access to the underlying writer.
+    ///
+    /// This is used by the NFS layer to backup and overwrite the header
+    /// when an error is encountered.
+    pub fn writer(&mut self) -> &mut Cursor<Vec<u8>> {
+        &mut self.writer
     }
 }
 
