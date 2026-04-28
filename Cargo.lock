@@ -216,7 +216,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nfs4serve"
+name = "nfs41server"
 version = "0.1.0"
 dependencies = [
  "anyhow",

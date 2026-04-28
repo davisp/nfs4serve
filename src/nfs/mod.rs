@@ -5,6 +5,7 @@ use num_traits::cast::FromPrimitive as _;
 use crate::rpc::{AuthUnix, RpcBodyCall, RpcHandler, RpcMessage};
 
 mod constants;
+mod handlers;
 mod ops;
 mod status;
 mod types;
@@ -12,6 +13,17 @@ mod types;
 pub use constants::*;
 pub use ops::NfsOperation;
 pub use status::NfsStatus;
+
+#[derive(Debug, FromPrimitive, ToPrimitive)]
+enum NfsProgram {
+    Null = 0,
+    Compound = 1,
+    Invalid = 255,
+}
+
+pub trait AsNfsStatus {
+    fn as_status(&self) -> NfsStatus;
+}
 
 pub fn handle(
     rpc: &mut RpcHandler,
@@ -46,6 +58,7 @@ pub fn handle(
                 .context("Error reading compound minor version.")?;
 
             if version != VERSION_MINOR {
+                rpc.write(&rpc.success())?;
                 rpc.write(&NfsStatus::MinorVersionMismatch)?;
                 rpc.write(&tag)?;
                 rpc.write(&0u32)?;
@@ -60,15 +73,4 @@ pub fn handle(
             Ok(())
         }
     }
-}
-
-#[derive(Debug, FromPrimitive, ToPrimitive)]
-enum NfsProgram {
-    Null = 0,
-    Compound = 1,
-    Invalid = 255,
-}
-
-pub trait AsNfsStatus {
-    fn as_status(&self) -> NfsStatus;
 }

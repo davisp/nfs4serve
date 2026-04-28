@@ -9,26 +9,20 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 
 use crate::rpc::RpcHandler;
-use crate::server::NFSv4Server;
 use crate::xdr::{XdrDeserialize as _, XdrSerialize as _};
 
 const RPC_LAST_FRAME: u32 = 0x80_00_00_00;
 const RPC_FRAME_LEN: u32 = 0x7F_FF_FF_FF;
 
 #[derive(Debug)]
-pub struct Connection {
-    server: NFSv4Server,
+pub struct TcpConnection {
     address: SocketAddr,
     reader: ConnectionReader,
     writer: ConnectionWriter,
 }
 
-impl Connection {
-    pub fn new(
-        server: NFSv4Server,
-        socket: TcpStream,
-        address: SocketAddr,
-    ) -> Result<Self> {
+impl TcpConnection {
+    pub fn new(socket: TcpStream, address: SocketAddr) -> Result<Self> {
         // The socket should already be non-blocking, but we set it here just
         // to be certain.
         socket
@@ -38,7 +32,6 @@ impl Connection {
         let (reader, writer) = socket.into_split();
 
         Ok(Self {
-            server,
             address,
             reader: ConnectionReader::new(reader),
             writer: ConnectionWriter::new(writer),

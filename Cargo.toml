@@ -1,5 +1,5 @@
 [package]
-name = "nfs4serve"
+name = "nfs41server"
 version = "0.1.0"
 edition = "2024"
 authors = ["Paul J. Davis <paul.joseph.davis@gmail.com>"]
@@ -42,7 +42,8 @@ suspicious = { level = "deny", priority = -1 }
 blanket_clippy_restriction_lints = "allow"
 
 # Project Specific
-missing_errors_doc = "allow" # We use anyhow everywhere, not much point specifying.
+wildcard_imports = "allow"   # I'm not gonna type all the names out.
+missing_errors_doc = "allow" # For now, I'm just using anyhow
 
 # Dev mode - Comment these out before a release
 exhaustive_structs = "allow"

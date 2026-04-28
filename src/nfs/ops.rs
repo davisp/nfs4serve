@@ -1,7 +1,10 @@
 use num_derive::{FromPrimitive, ToPrimitive};
 
+use crate::xdr::{self, XdrDeserialize, XdrSerialize};
+
 /// NFS Operations
-#[derive(Debug, FromPrimitive, ToPrimitive)]
+#[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
+#[repr(u32)]
 pub enum NfsOperation {
     Access = 3,
     Close = 4,
@@ -57,3 +60,4 @@ pub enum NfsOperation {
     ReclaimComplete = 58,
     Illegal = 10044,
 }
+xdr::serde_enum!(NfsOperation);

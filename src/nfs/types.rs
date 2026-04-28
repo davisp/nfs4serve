@@ -1,5 +1,3 @@
-#![allow(clippy::wildcard_imports, reason = "Because I used a wildcard.")]
-
 use std::io::{Read, Write};
 
 use num_derive::{FromPrimitive, ToPrimitive};
@@ -1571,11 +1569,11 @@ impl XdrDeserialize for CreateOk {
 
 pub type CreateResult = Result<CreateOk, NfsStatus>;
 
-pub struct PurgeDelegationArgs {
+pub struct PurgeDelegationsArgs {
     client_id: ClientId,
 }
 
-impl XdrSerialize for PurgeDelegationArgs {
+impl XdrSerialize for PurgeDelegationsArgs {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.client_id.serialize(dest)?;
 
@@ -1583,7 +1581,7 @@ impl XdrSerialize for PurgeDelegationArgs {
     }
 }
 
-impl XdrDeserialize for PurgeDelegationArgs {
+impl XdrDeserialize for PurgeDelegationsArgs {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let client_id = ClientId::deserialize(src)?;
 
@@ -1591,7 +1589,7 @@ impl XdrDeserialize for PurgeDelegationArgs {
     }
 }
 
-pub type PurgeDelegationResult = Result<NfsStatus, NfsStatus>;
+pub type PurgeDelegationsResult = Result<NfsStatus, NfsStatus>;
 
 pub struct ReturnDelegationArgs {
     delegation_state_id: StateId,
@@ -2047,11 +2045,11 @@ pub type LookupResult = Result<NfsStatus, NfsStatus>;
 
 pub type LookupParentResult = Result<NfsStatus, NfsStatus>;
 
-pub struct VerifyAttributeDifference {
+pub struct VerifyAttributeDifferenceArgs {
     object_attrs: FileAttrs,
 }
 
-impl XdrSerialize for VerifyAttributeDifference {
+impl XdrSerialize for VerifyAttributeDifferenceArgs {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.object_attrs.serialize(dest)?;
 
@@ -2059,7 +2057,7 @@ impl XdrSerialize for VerifyAttributeDifference {
     }
 }
 
-impl XdrDeserialize for VerifyAttributeDifference {
+impl XdrDeserialize for VerifyAttributeDifferenceArgs {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let object_attrs = FileAttrs::deserialize(src)?;
 
@@ -2878,7 +2876,7 @@ pub type PutFhResult = Result<NfsStatus, NfsStatus>;
 
 pub type PutPublicFhResult = Result<NfsStatus, NfsStatus>;
 
-pub type PutRotoFhResult = Result<NfsStatus, NfsStatus>;
+pub type PutRootFhResult = Result<NfsStatus, NfsStatus>;
 
 pub struct ReadArgs {
     state_id: StateId,
@@ -3287,12 +3285,12 @@ impl XdrDeserialize for SecurityInfoOk {
 
 pub type SecurityInfoResult = Result<SecurityInfoOk, NfsStatus>;
 
-pub struct SetAttributeArgs {
+pub struct SetAttributesArgs {
     state_id: StateId,
     object_attrs: FileAttrs,
 }
 
-impl XdrSerialize for SetAttributeArgs {
+impl XdrSerialize for SetAttributesArgs {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.state_id.serialize(dest)?;
         self.object_attrs.serialize(dest)?;
@@ -3301,7 +3299,7 @@ impl XdrSerialize for SetAttributeArgs {
     }
 }
 
-impl XdrDeserialize for SetAttributeArgs {
+impl XdrDeserialize for SetAttributesArgs {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let state_id = StateId::deserialize(src)?;
         let object_attrs = FileAttrs::deserialize(src)?;
@@ -4163,7 +4161,7 @@ impl XdrDeserialize for DestroySessionArgs {
     }
 }
 
-type DestroySessionResult = Result<NfsStatus, NfsStatus>;
+pub type DestroySessionResult = Result<NfsStatus, NfsStatus>;
 
 pub struct FreeStateIdArgs {
     state_id: StateId,
@@ -4185,11 +4183,11 @@ impl XdrDeserialize for FreeStateIdArgs {
     }
 }
 
-pub type FreeStateResult = Result<NfsStatus, NfsStatus>;
+pub type FreeStateIdResult = Result<NfsStatus, NfsStatus>;
 
 pub type AttributeNotice = NfsTime;
 
-pub struct GetDirectoryDelegation {
+pub struct GetDirectoryDelegationArgs {
     signal_delegation_available: bool,
     notification_types: BitMap,
     child_attribute_delay: AttributeNotice,
@@ -4198,7 +4196,7 @@ pub struct GetDirectoryDelegation {
     directory_attributes: BitMap,
 }
 
-impl XdrSerialize for GetDirectoryDelegation {
+impl XdrSerialize for GetDirectoryDelegationArgs {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.signal_delegation_available.serialize(dest)?;
         self.notification_types.serialize(dest)?;
@@ -4211,7 +4209,7 @@ impl XdrSerialize for GetDirectoryDelegation {
     }
 }
 
-impl XdrDeserialize for GetDirectoryDelegation {
+impl XdrDeserialize for GetDirectoryDelegationArgs {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let signal_delegation_available = bool::deserialize(src)?;
         let notification_types = BitMap::deserialize(src)?;
@@ -4740,7 +4738,7 @@ impl XdrSerialize for LayoutGetReturn {
     }
 }
 
-type LayoutGetResult = Result<LayoutGetReturn, NfsStatus>;
+pub type LayoutGetResult = Result<LayoutGetReturn, NfsStatus>;
 
 pub struct LayoutReturnArgs {
     reclaim: bool,
@@ -5143,16 +5141,4 @@ impl XdrDeserialize for ReclaimCompleteArgs {
 
 pub type ReclaimCompleteResult = Result<NfsStatus, NfsStatus>;
 
-// impl XdrSerialize for  {
-//     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
-//
-//         Ok(())
-//     }
-// }
-//
-// impl XdrDeserialize for  {
-//     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-//
-//         Ok(Self {})
-//     }
-// }
+pub enum NfsOpResults {}

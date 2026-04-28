@@ -4,19 +4,19 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context as _, Result, anyhow};
 use tokio::net::TcpListener;
 
-use crate::connection::Connection;
-
-#[derive(Debug, Clone)]
-pub struct NFSv4Server {
-    inner: Arc<Mutex<NFSv4ServerInner>>,
-}
+use crate::tcp::TcpConnection;
 
 #[derive(Debug)]
-pub struct NFSv4ServerInner {
+pub struct NFSv41ServerInner {
     address: SocketAddr,
 }
 
-impl NFSv4Server {
+#[derive(Debug, Clone)]
+pub struct NFSv41Server {
+    inner: Arc<Mutex<NFSv41ServerInner>>,
+}
+
+impl NFSv41Server {
     pub async fn new(addr: &str) -> Result<Self> {
         let Some(address) = addr
             .to_socket_addrs()
@@ -28,7 +28,7 @@ impl NFSv4Server {
             ));
         };
 
-        let inner = NFSv4ServerInner { address };
+        let inner = NFSv41ServerInner { address };
 
         Ok(Self {
             inner: Arc::new(Mutex::new(inner)),
@@ -39,7 +39,7 @@ impl NFSv4Server {
     ///
     /// # Panics
     ///
-    /// If accepting a socket fails.
+    /// If the mutex is poisoned.
     pub async fn serve(&self) -> Result<()> {
         let address = {
             let guard = self.inner.lock().expect("Server lock was poisoned.");
@@ -57,7 +57,7 @@ impl NFSv4Server {
                 .await
                 .context("Error accepting next client connection.")?;
 
-            let conn = Connection::new(self.clone(), socket, addr)
+            let conn = TcpConnection::new(socket, addr)
                 .context("Error creating client connection.")?;
 
             tokio::spawn(async move {

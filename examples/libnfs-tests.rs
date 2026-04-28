@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use nfs4serve::NFSv4Server;
+use nfs41server::NFSv4Server;
 
 #[tokio::main]
 async fn main() -> Result<()> {
