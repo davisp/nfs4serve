@@ -130,7 +130,6 @@ impl ConnectionWriter {
         mut writer: OwnedWriteHalf,
         mut rx: Receiver<Vec<u8>>,
     ) -> Result<()> {
-        let mut length = [0u8; 4];
         loop {
             let Some(frame) = rx.recv().await else {
                 // Our last frame has been sent, time to exit.
@@ -142,18 +141,16 @@ impl ConnectionWriter {
                 "TODO: Update to follow RFC 1057 Section 10."
             );
 
+            Self::debug_frame(&frame);
+
             #[expect(
                 clippy::cast_possible_truncation,
                 reason = "See the above assertion."
             )]
             let header = (frame.len() as u32) | RPC_LAST_FRAME;
-            let mut w = Cursor::new(&mut length[..]);
-            (header)
-                .serialize(&mut w)
-                .context("Error encoding frame length for client.")?;
 
             writer
-                .write_all(&length[..])
+                .write_all(&header.to_be_bytes())
                 .await
                 .context("Error sending frame size to the client.")?;
 
@@ -164,5 +161,14 @@ impl ConnectionWriter {
         }
 
         Ok(())
+    }
+
+    fn debug_frame(data: &[u8]) {
+        use crate::rpc;
+
+        let mut reader = Cursor::new(data);
+
+        let msg = rpc::RpcMessage::deserialize(&mut reader);
+        eprintln!("MSG: {msg:#?}");
     }
 }

@@ -159,7 +159,7 @@ impl XdrDeserialize for Vec<Vec<u8>> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct MaxLenBytes<const N: usize>(Vec<u8>);
 
 impl<const N: usize> MaxLenBytes<N> {
@@ -172,6 +172,12 @@ impl<const N: usize> MaxLenBytes<N> {
         }
 
         Ok(Self(data))
+    }
+}
+
+impl<const N: usize> From<MaxLenBytes<N>> for Vec<u8> {
+    fn from(val: MaxLenBytes<N>) -> Self {
+        val.0
     }
 }
 

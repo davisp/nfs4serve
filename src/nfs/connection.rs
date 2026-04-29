@@ -105,11 +105,12 @@ impl NfsConnection {
 
             log::trace!("COMPOUND ops: {num_ops}");
 
-            // At this point we have accepted the message for processing sow
+            // At this point we have accepted the message for processing so
             // we mark the RPC layer as successful. We're also pre-emptively
             // writing a status and response count. These will be overwritten
             // in the case of an error.
             rpc.write(&rpc.success())?;
+            rpc.mark_header();
             rpc.write(&NfsStatus::Ok)?;
             rpc.write(&tag)?;
             rpc.write(&0u32)?;
@@ -122,6 +123,7 @@ impl NfsConnection {
         if !matches!(req.status, NfsStatus::Ok)
             || req.replied as usize != req.num_ops
         {
+            log::info!("Rewriting result.");
             let pos = req.rpc.writer().position();
             let res = req.rewrite_header();
             req.rpc.writer().set_position(pos);
@@ -191,8 +193,9 @@ impl NfsRequest {
     }
 
     pub fn rewrite_header(&mut self) -> std::io::Result<()> {
+        let header_pos = self.rpc.header_pos();
         let mut writer = self.rpc.writer();
-        writer.set_position(0);
+        writer.set_position(header_pos);
 
         self.status.serialize(&mut writer)?;
         self.tag.serialize(&mut writer)?;

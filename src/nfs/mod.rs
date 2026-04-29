@@ -1,5 +1,5 @@
 mod connection;
-mod constants;
+pub mod constants;
 mod ops;
 mod status;
 pub mod types;

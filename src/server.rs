@@ -1,11 +1,48 @@
+use std::collections::HashMap;
 use std::net::{SocketAddr, ToSocketAddrs as _};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow};
+use rand::RngExt as _;
 use tokio::net::TcpListener;
 
-use crate::nfs::types::*;
+use crate::client::Client;
+use crate::nfs::constants::{
+    EXCHANGE_ID_FLAG_CONFIRMED_R, EXCHANGE_ID_FLAG_USE_NON_PNFS,
+    NFS_OPAQUE_LIMIT,
+};
+use crate::nfs::types::{
+    AccessArgs, AccessResult, BackchannelControlArgs, BackchannelControlResult,
+    BindConnectionToSessionArgs, BindConnectionToSessionResult, ClientId,
+    CloseArgs, CloseResult, CommitArgs, CommitResult, CreateArgs, CreateResult,
+    CreateSessionArgs, CreateSessionResult, DestroyClientIdArgs,
+    DestroyClientIdResult, DestroySessionArgs, DestroySessionResult,
+    ExchangeIdArgs, ExchangeIdOk, ExchangeIdResult, FreeStateIdArgs,
+    FreeStateIdResult, GetAttributesArgs, GetAttributesResult,
+    GetDeviceInfoArgs, GetDeviceInfoResult, GetDeviceListArgs,
+    GetDeviceListResult, GetDirectoryDelegationArgs,
+    GetDirectoryDelegationResult, GetFhResult, LayoutCommitArgs,
+    LayoutCommitResult, LayoutGetArgs, LayoutGetResult, LayoutReturnArgs,
+    LayoutReturnResult, LinkArgs, LinkResult, LockArgs, LockReleaseArgs,
+    LockReleaseResult, LockResult, LockTestArgs, LockTestResult, LookupArgs,
+    LookupParentResult, LookupResult, OpenArgs, OpenAttributesArgs,
+    OpenAttributesResult, OpenDowngradeArgs, OpenDowngradeResult, OpenResult,
+    PurgeDelegationsArgs, PurgeDelegationsResult, PutFhArgs, PutFhResult,
+    PutPublicFhResult, PutRootFhResult, ReadArgs, ReadDirectoryArgs,
+    ReadDirectoryResult, ReadLinkResult, ReadResult, ReclaimCompleteArgs,
+    ReclaimCompleteResult, RemoveArgs, RemoveResult, RenameArgs, RenameResult,
+    RestoreFhResult, ReturnDelegationArgs, ReturnDelegationResult,
+    SaveFhResult, SecurityInfoArgs, SecurityInfoNoNameArgs,
+    SecurityInfoNoNameResult, SecurityInfoNoNameStyle, SecurityInfoResult,
+    SequenceArgs, SequenceResult, ServerOwner, SetAttributesArgs,
+    SetAttributesResult, SetSsvArgs, SetSsvResult, StateProtectionArg,
+    StateProtectionResult, TestStateIdsArgs, TestStateIdsResult, VerifyArgs,
+    VerifyAttributeDifferenceArgs, VerifyAttributeDifferenceResult,
+    VerifyResult, WantDelegationArgs, WantDelegationResult, WriteArgs,
+    WriteResult,
+};
 use crate::nfs::{NfsConnection, NfsOperation, NfsRequest, NfsStatus};
+use crate::xdr::MaxLenBytes;
 
 macro_rules! handle {
     ($self:expr, $req:expr, $op:expr, $args:ty, $call:ident) => {
@@ -20,9 +57,9 @@ macro_rules! handle {
             }
         };
 
-        log::trace!("NFS COMPOUND operation args: {args:?}");
+        log::trace!("NFS COMPOUND operation args:\n{args:#?}");
 
-        match $self.$call(args) {
+        match $self.$call(args).await {
             Ok(ok) => $req
                 .reply(&ok)
                 .context(format!("Error replying to op {:?}", $op))?,
@@ -36,7 +73,9 @@ macro_rules! handle {
 
 macro_rules! handle_no_args {
     ($self:expr, $req:expr, $op:expr, $call:ident) => {
-        match $self.$call() {
+        log::trace!("Handling NFS COMPOUND operation: {:?} (No args)", $op);
+
+        match $self.$call().await {
             Ok(ok) => $req
                 .reply(&ok)
                 .context(format!("Error replying to op {:?}", $op))?,
@@ -50,7 +89,42 @@ macro_rules! handle_no_args {
 
 #[derive(Debug)]
 pub struct NFSv41ServerInner {
+    server_owner: ServerOwner,
+    server_scope: MaxLenBytes<NFS_OPAQUE_LIMIT>,
     address: SocketAddr,
+    clients: HashMap<ClientId, Client>,
+    client_ids_by_owner: HashMap<MaxLenBytes<NFS_OPAQUE_LIMIT>, ClientId>,
+    next_client_id: u64,
+}
+
+impl NFSv41ServerInner {
+    /// Add a client to the server state.
+    fn add_client(&mut self, client: Client) {
+        assert!(
+            !self.clients.contains_key(&client.client_id),
+            "Duplicate client id's detected."
+        );
+
+        self.client_ids_by_owner
+            .insert(client.owner_id.clone(), client.client_id);
+        self.clients.insert(client.client_id, client);
+    }
+
+    /// Remove a client from server state.
+    ///
+    /// Currently this is not async mostly because I don't want to fight the
+    /// server mutex in async Rust. I'll probably have to figure that out
+    /// eventually.
+    fn remove_client(&mut self, client_id: ClientId) {
+        let Some(client) = self.clients.remove(&client_id) else {
+            log::error!(
+                "Attempted to remove an unknown client_id: {client_id}"
+            );
+            return;
+        };
+
+        self.client_ids_by_owner.remove(&client.owner_id);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -59,7 +133,22 @@ pub struct NFSv41Server {
 }
 
 impl NFSv41Server {
-    pub async fn new(addr: &str) -> Result<Self> {
+    /// Create a new server.
+    pub fn new(addr: &str) -> Result<Self> {
+        #[expect(clippy::missing_panics_doc, reason = "It won't panic.")]
+        let server_owner = ServerOwner {
+            minor_id: rand::rng().random::<u64>(),
+            major_id: MaxLenBytes::<NFS_OPAQUE_LIMIT>::new(Vec::from(
+                "An NFSv4.1 Server In Rust. This should be more unique.",
+            ))
+            .unwrap(),
+        };
+
+        #[expect(clippy::missing_panics_doc, reason = "It won't panic.")]
+        let server_scope =
+            MaxLenBytes::<NFS_OPAQUE_LIMIT>::new(Vec::from("localhost"))
+                .unwrap();
+
         let Some(address) = addr
             .to_socket_addrs()
             .context("Error parsing or resolving server listen address.")?
@@ -70,7 +159,14 @@ impl NFSv41Server {
             ));
         };
 
-        let inner = NFSv41ServerInner { address };
+        let inner = NFSv41ServerInner {
+            server_owner,
+            server_scope,
+            address,
+            clients: HashMap::new(),
+            client_ids_by_owner: HashMap::new(),
+            next_client_id: 0,
+        };
 
         Ok(Self {
             inner: Arc::new(Mutex::new(inner)),
@@ -135,12 +231,17 @@ impl NFSv41Server {
                         );
                         req.ack(NfsStatus::OpIllegal)?;
                         conn.send(req).await?;
-                        break;
+                        return Err(anyhow!(
+                            "Client attempted to use an illegal operation."
+                        ));
                     }
                 };
 
-                let resp = self.dispatch(&mut req, op);
+                log::debug!("Dispatching COMPOUND op: {op:?}");
+                self.dispatch(&mut req, op).await?;
             }
+
+            conn.send(req).await?;
         }
     }
 
@@ -152,7 +253,11 @@ impl NFSv41Server {
         clippy::cognitive_complexity,
         reason = "It's still a dispatch function, Michael!"
     )]
-    fn dispatch(&self, req: &mut NfsRequest, op: NfsOperation) -> Result<()> {
+    async fn dispatch(
+        &self,
+        req: &mut NfsRequest,
+        op: NfsOperation,
+    ) -> Result<()> {
         match op {
             NfsOperation::Access => {
                 handle!(self, req, op, AccessArgs, access);
@@ -260,7 +365,7 @@ impl NFSv41Server {
                     }
                 };
 
-                let resp = self.set_attributes(args);
+                let resp = self.set_attributes(args).await;
                 req.reply(&resp)
                     .context(format!("Error replying to op {op:?}"))?;
             }
@@ -365,14 +470,14 @@ impl NFSv41Server {
     /// Check Access Rights
     ///
     /// [RFC 8881 Section 18.1](https://www.rfc-editor.org/rfc/rfc8881#OP_ACCESS)
-    fn access(&self, args: AccessArgs) -> AccessResult {
+    async fn access(&self, args: AccessArgs) -> AccessResult {
         todo!()
     }
 
     /// Backchannel Control
     ///
     /// [RFC 8881 Section 18.33](https://www.rfc-editor.org/rfc/rfc8881#OP_BACKCHANNEL_CTL)
-    fn backchannel_control(
+    async fn backchannel_control(
         &self,
         args: BackchannelControlArgs,
     ) -> BackchannelControlResult {
@@ -382,7 +487,7 @@ impl NFSv41Server {
     /// Bind Connection To Session
     ///
     /// [RFC 8881 Section 18.34](https://www.rfc-editor.org/rfc/rfc8881#OP_BIND_CONN_TO_SESSION)
-    fn bind_connection_to_session(
+    async fn bind_connection_to_session(
         &self,
         args: BindConnectionToSessionArgs,
     ) -> BindConnectionToSessionResult {
@@ -392,35 +497,38 @@ impl NFSv41Server {
     /// Close File
     ///
     /// [RFC 8881 Section 18.2](https://www.rfc-editor.org/rfc/rfc8881#OP_CLOSE)
-    fn close(&self, args: CloseArgs) -> CloseResult {
+    async fn close(&self, args: CloseArgs) -> CloseResult {
         todo!()
     }
 
     /// Commit Cached Data
     ///
     /// [RFC 8881 Section 18.3](https://www.rfc-editor.org/rfc/rfc8881#OP_COMMIT)
-    fn commit(&self, args: CommitArgs) -> CommitResult {
+    async fn commit(&self, args: CommitArgs) -> CommitResult {
         todo!()
     }
 
     /// Create Non-Regular File Object
     ///
     /// [RFC 8881 Section 18.4](https://www.rfc-editor.org/rfc/rfc8881#OP_CREATE)
-    fn create(&self, args: CreateArgs) -> CreateResult {
+    async fn create(&self, args: CreateArgs) -> CreateResult {
         todo!()
     }
 
     /// Create New Session and Confirm Client ID
     ///
     /// [RFC 8881 Section 18.36](https://www.rfc-editor.org/rfc/rfc8881#OP_CREATE_SESSION)
-    fn create_session(&self, args: CreateSessionArgs) -> CreateSessionResult {
+    async fn create_session(
+        &self,
+        args: CreateSessionArgs,
+    ) -> CreateSessionResult {
         todo!()
     }
 
     /// Purge Delegations Awaiting Recovery
     ///
     /// [RFC 8881 Section 18.5](https://www.rfc-editor.org/rfc/rfc8881#OP_DELEGPURGE)
-    fn purge_delegations(
+    async fn purge_delegations(
         &self,
         args: PurgeDelegationsArgs,
     ) -> PurgeDelegationsResult {
@@ -430,7 +538,7 @@ impl NFSv41Server {
     /// Return Delegation
     ///
     /// [RFC 8881 Section 18.6](https://www.rfc-editor.org/rfc/rfc8881#OP_DELEGRETURN)
-    fn return_delegation(
+    async fn return_delegation(
         &self,
         args: ReturnDelegationArgs,
     ) -> ReturnDelegationResult {
@@ -440,7 +548,7 @@ impl NFSv41Server {
     /// Destroy Client ID
     ///
     /// [RFC 8881 Section 18.50](https://www.rfc-editor.org/rfc/rfc8881#OP_DESTROY_CLIENTID)
-    fn destroy_client_id(
+    async fn destroy_client_id(
         &self,
         args: DestroyClientIdArgs,
     ) -> DestroyClientIdResult {
@@ -450,7 +558,7 @@ impl NFSv41Server {
     /// Destroy Session
     ///
     /// [RFC 8881 Section 18.37](https://www.rfc-editor.org/rfc/rfc8881#OP_DESTROY_SESSION)
-    fn destroy_session(
+    async fn destroy_session(
         &self,
         args: DestroySessionArgs,
     ) -> DestroySessionResult {
@@ -460,49 +568,116 @@ impl NFSv41Server {
     /// Instantiate a Client ID
     ///
     /// [RFC 8881 Section 18.35](https://www.rfc-editor.org/rfc/rfc8881#OP_EXCHANGE_ID)
-    fn exchange_id(&self, args: ExchangeIdArgs) -> ExchangeIdResult {
-        todo!()
+    ///
+    /// So, this is a bit of a doozy for a first handler to implement. There's
+    /// a whole lot of complexity due to pNFS and friends. For the moment I'm
+    /// only attempting to handle initial connections and reconnections.
+    async fn exchange_id(&self, args: ExchangeIdArgs) -> ExchangeIdResult {
+        if !matches!(args.state_protect, StateProtectionArg::None) {
+            return Err(NfsStatus::EINVAL);
+        }
+
+        let mut server = self.inner.lock().expect("Server mutex was poisoned.");
+        let maybe_client_id = server
+            .client_ids_by_owner
+            .get(&args.client_owner.owner_id)
+            .copied();
+        if let Some(client_id) = maybe_client_id {
+            let Some(client) = server.clients.get(&client_id) else {
+                panic!("Server client lists mismatch.")
+            };
+
+            if args.client_owner.verifier == client.verifier {
+                let mut flags = EXCHANGE_ID_FLAG_USE_NON_PNFS;
+
+                // I think something like this? I should probably also be
+                // handling the update request? Oh well, we can always patch
+                // this logic later.
+                if client.confirmed {
+                    flags |= EXCHANGE_ID_FLAG_CONFIRMED_R;
+                }
+
+                return Ok(ExchangeIdOk {
+                    client_id,
+                    sequence_id: client.sequence,
+                    flags,
+                    state_protection: StateProtectionResult::None,
+                    server_owner: server.server_owner.clone(),
+                    server_scope: server.server_scope.clone(),
+                    server_impl_id: None,
+                });
+            }
+
+            // Client changed verifiers. So delete all recorded state of the
+            // client and fall through to reestablish a new ClientId.
+            server.remove_client(client_id);
+        }
+
+        // Either a new client, or a client with a new verifier reconnecting.
+        let client_id = server.next_client_id;
+        server.next_client_id += 1;
+
+        let client = Client::new(args.client_owner, client_id);
+
+        Ok(ExchangeIdOk {
+            client_id,
+            sequence_id: client.sequence,
+            flags: EXCHANGE_ID_FLAG_USE_NON_PNFS,
+            state_protection: StateProtectionResult::None,
+            server_owner: server.server_owner.clone(),
+            server_scope: server.server_scope.clone(),
+            server_impl_id: None,
+        })
     }
 
     /// Free State ID with No Locks
     ///
     /// [RFC 8881 Section 18.38](https://www.rfc-editor.org/rfc/rfc8881#OP_FREE_STATEID)
-    fn free_state_id(&self, args: FreeStateIdArgs) -> FreeStateIdResult {
+    async fn free_state_id(&self, args: FreeStateIdArgs) -> FreeStateIdResult {
         todo!()
     }
 
     /// Get Attributes
     ///
     /// [RFC 8881 Section 18.7](https://www.rfc-editor.org/rfc/rfc8881#OP_GETATTR)
-    fn get_attributes(&self, args: GetAttributesArgs) -> GetAttributesResult {
+    async fn get_attributes(
+        &self,
+        args: GetAttributesArgs,
+    ) -> GetAttributesResult {
         todo!()
     }
 
     /// Get Device Info
     ///
     /// [RFC 8881 Section 18.40](https://www.rfc-editor.org/rfc/rfc8881#OP_GETDEVICEINFO)
-    fn get_device_info(&self, args: GetDeviceInfoArgs) -> GetDeviceInfoResult {
+    async fn get_device_info(
+        &self,
+        args: GetDeviceInfoArgs,
+    ) -> GetDeviceInfoResult {
         todo!()
     }
 
     /// Get Device List
     ///
     /// [RFC 8881 Section 18.41](https://www.rfc-editor.org/rfc/rfc8881#OP_GETDEVICELIST)
-    fn get_device_list(&self, args: GetDeviceListArgs) -> GetDeviceListResult {
+    async fn get_device_list(
+        &self,
+        args: GetDeviceListArgs,
+    ) -> GetDeviceListResult {
         todo!()
     }
 
     /// Get Current Filehandle
     ///
     /// [RFC 8881 Section 18.8](https://www.rfc-editor.org/rfc/rfc8881#OP_GETFH)
-    fn get_current_fh(&self) -> GetFhResult {
+    async fn get_current_fh(&self) -> GetFhResult {
         todo!()
     }
 
     /// Get Directory Delegation
     ///
     /// [RFC 8881 Section 18.39](https://www.rfc-editor.org/rfc/rfc8881#OP_GET_DIR_DELEGATION)
-    fn get_directory_delegation(
+    async fn get_directory_delegation(
         &self,
         args: GetDirectoryDelegationArgs,
     ) -> GetDirectoryDelegationResult {
@@ -512,70 +687,76 @@ impl NFSv41Server {
     /// Commit Writes Made Using a Layout
     ///
     /// [RFC 8881 Section 18.42](https://www.rfc-editor.org/rfc/rfc8881#OP_LAYOUTCOMMIT)
-    fn layout_commit(&self, args: LayoutCommitArgs) -> LayoutCommitResult {
+    async fn layout_commit(
+        &self,
+        args: LayoutCommitArgs,
+    ) -> LayoutCommitResult {
         todo!()
     }
 
     /// Get Layout Information
     ///
     /// [RFC 8881 Section 18.43](https://www.rfc-editor.org/rfc/rfc8881#OP_LAYOUTGET)
-    fn layout_get(&self, args: LayoutGetArgs) -> LayoutGetResult {
+    async fn layout_get(&self, args: LayoutGetArgs) -> LayoutGetResult {
         todo!()
     }
 
     /// Release Layout Information
     ///
     /// [RFC 8881 Section 18.44](https://www.rfc-editor.org/rfc/rfc8881#OP_LAYOUTRETURN)
-    fn layout_return(&self, args: LayoutReturnArgs) -> LayoutReturnResult {
+    async fn layout_return(
+        &self,
+        args: LayoutReturnArgs,
+    ) -> LayoutReturnResult {
         todo!()
     }
 
     /// Create Link to File
     ///
     /// [RFC 8881 Section 18.9](https://www.rfc-editor.org/rfc/rfc8881#OP_LINK)
-    fn link(&self, args: LinkArgs) -> LinkResult {
+    async fn link(&self, args: LinkArgs) -> LinkResult {
         todo!()
     }
 
     /// Create a Lock
     ///
     /// [RFC 8881 Section 18.10](https://www.rfc-editor.org/rfc/rfc8881#OP_LOCK)
-    fn lock(&self, args: LockArgs) -> LockResult {
+    async fn lock(&self, args: LockArgs) -> LockResult {
         todo!()
     }
 
     /// Test for Lock
     ///
     /// [RFC 8881 Section 18.11](https://www.rfc-editor.org/rfc/rfc8881#OP_LOCKT)
-    fn lock_test(&self, args: LockTestArgs) -> LockTestResult {
+    async fn lock_test(&self, args: LockTestArgs) -> LockTestResult {
         todo!()
     }
 
     /// Release a Lock
     ///
     /// [RFC 8881 Section 18.12](https://www.rfc-editor.org/rfc/rfc8881#OP_LOCKU)
-    fn lock_release(&self, args: LockReleaseArgs) -> LockReleaseResult {
+    async fn lock_release(&self, args: LockReleaseArgs) -> LockReleaseResult {
         todo!()
     }
 
     /// Lookup Filename
     ///
     /// [RFC 8881 Section 18.13](https://www.rfc-editor.org/rfc/rfc8881#OP_LOOKUP)
-    fn lookup(&self, args: LookupArgs) -> LookupResult {
+    async fn lookup(&self, args: LookupArgs) -> LookupResult {
         todo!()
     }
 
     /// Lookup Parent Directory
     ///
     /// [RFC 8881 Section 18.14](https://www.rfc-editor.org/rfc/rfc8881#OP_LOOKUPP)
-    fn lookup_parent(&self) -> LookupParentResult {
+    async fn lookup_parent(&self) -> LookupParentResult {
         todo!()
     }
 
     /// Verify Difference in Attributes
     ///
     /// [RFC 8881 Section 18.15](https://www.rfc-editor.org/rfc/rfc8881#OP_NVERIFY)
-    fn verify_attribute_difference(
+    async fn verify_attribute_difference(
         &self,
         args: VerifyAttributeDifferenceArgs,
     ) -> VerifyAttributeDifferenceResult {
@@ -585,14 +766,14 @@ impl NFSv41Server {
     /// Open a Regular File
     ///
     /// [RFC 8881 Section 18.16](https://www.rfc-editor.org/rfc/rfc8881#OP_OPEN)
-    fn open(&self, args: OpenArgs) -> OpenResult {
+    async fn open(&self, args: OpenArgs) -> OpenResult {
         todo!()
     }
 
     /// Open Named Attribute Directory
     ///
     /// [RFC 8881 Section 18.17](https://www.rfc-editor.org/rfc/rfc8881#OP_OPENATTR)
-    fn open_attributes(
+    async fn open_attributes(
         &self,
         args: OpenAttributesArgs,
     ) -> OpenAttributesResult {
@@ -602,56 +783,62 @@ impl NFSv41Server {
     /// Reduce Open File Access
     ///
     /// [RFC 8881 Section 18.18](https://www.rfc-editor.org/rfc/rfc8881#OP_OPEN_DOWNGRADE)
-    fn open_downgrade(&self, args: OpenDowngradeArgs) -> OpenDowngradeResult {
+    async fn open_downgrade(
+        &self,
+        args: OpenDowngradeArgs,
+    ) -> OpenDowngradeResult {
         todo!()
     }
 
     /// Set Current Filehandle
     ///
     /// [RFC 8881 Section 18.19](https://www.rfc-editor.org/rfc/rfc8881#OP_PUTFH)
-    fn put_fh(&self, args: PutFhArgs) -> PutFhResult {
+    async fn put_fh(&self, args: PutFhArgs) -> PutFhResult {
         todo!()
     }
 
     /// Set Public Filehandle
     ///
     /// [RFC 8881 Section 18.20](https://www.rfc-editor.org/rfc/rfc8881#OP_PUTPUBFH)
-    fn put_public_fh(&self) -> PutPublicFhResult {
+    async fn put_public_fh(&self) -> PutPublicFhResult {
         todo!()
     }
 
     /// Set Root Filehandle
     ///
     /// [RFC 8881 Section 18.21](https://www.rfc-editor.org/rfc/rfc8881#OP_PUTROOTFH)
-    fn put_root_fh(&self) -> PutRootFhResult {
+    async fn put_root_fh(&self) -> PutRootFhResult {
         todo!()
     }
 
     /// Read from File
     ///
     /// [RFC 8881 Section 18.22](https://www.rfc-editor.org/rfc/rfc8881#OP_READ)
-    fn read(&self, args: ReadArgs) -> ReadResult {
+    async fn read(&self, args: ReadArgs) -> ReadResult {
         todo!()
     }
 
     /// Read Directory
     ///
     /// [RFC 8881 Section 18.23](https://www.rfc-editor.org/rfc/rfc8881#OP_READDIR)
-    fn read_directory(&self, args: ReadDirectoryArgs) -> ReadDirectoryResult {
+    async fn read_directory(
+        &self,
+        args: ReadDirectoryArgs,
+    ) -> ReadDirectoryResult {
         todo!()
     }
 
     /// Read Symbolic Link
     ///
     /// [RFC 8881 Section 18.24](https://www.rfc-editor.org/rfc/rfc8881#OP_READLINK)
-    fn read_link(&self) -> ReadLinkResult {
+    async fn read_link(&self) -> ReadLinkResult {
         todo!()
     }
 
     /// Indicate Reclaims Finished
     ///
     /// [RFC 8881 Section 18.51](https://www.rfc-editor.org/rfc/rfc8881#OP_RECLAIM_COMPLETE)
-    fn reclaim_complete(
+    async fn reclaim_complete(
         &self,
         args: ReclaimCompleteArgs,
     ) -> ReclaimCompleteResult {
@@ -661,35 +848,38 @@ impl NFSv41Server {
     /// Remove File System Object
     ///
     /// [RFC 8881 Section 18.25](https://www.rfc-editor.org/rfc/rfc8881#OP_REMOVE)
-    fn remove(&self, args: RemoveArgs) -> RemoveResult {
+    async fn remove(&self, args: RemoveArgs) -> RemoveResult {
         todo!()
     }
 
     /// Rename Directory Entry
     ///
     /// [RFC 8881 Section 18.26](https://www.rfc-editor.org/rfc/rfc8881#OP_RENAME)
-    fn rename(&self, args: RenameArgs) -> RenameResult {
+    async fn rename(&self, args: RenameArgs) -> RenameResult {
         todo!()
     }
 
     /// Restore Saved Filehandle
     ///
     /// [RFC 8881 Section 18.27](https://www.rfc-editor.org/rfc/rfc8881#OP_RESTOREFH)
-    fn restore_fh(&self) -> RestoreFhResult {
+    async fn restore_fh(&self) -> RestoreFhResult {
         todo!()
     }
 
     /// Save Current Filehandle
     ///
     /// [RFC 8881 Section 18.28](https://www.rfc-editor.org/rfc/rfc8881#OP_SAVEFH)
-    fn save_fh(&self) -> SaveFhResult {
+    async fn save_fh(&self) -> SaveFhResult {
         todo!()
     }
 
     /// Obtain Available Security
     ///
     /// [RFC 8881 Section 18.29](https://www.rfc-editor.org/rfc/rfc8881#OP_SECINFO)
-    fn security_info(&self, args: SecurityInfoArgs) -> SecurityInfoResult {
+    async fn security_info(
+        &self,
+        args: SecurityInfoArgs,
+    ) -> SecurityInfoResult {
         todo!()
     }
 
@@ -698,7 +888,7 @@ impl NFSv41Server {
     /// [RFC 8881 Section 18.45](https://www.rfc-editor.org/rfc/rfc8881#OP_SECINFO_NO_NAME)
     ///
     /// See also [RFC 8881 Section 13.12](https://www.rfc-editor.org/rfc/rfc8881#file_security_considerations)
-    fn security_info_no_name(
+    async fn security_info_no_name(
         &self,
         style: SecurityInfoNoNameStyle,
     ) -> SecurityInfoNoNameResult {
@@ -708,42 +898,48 @@ impl NFSv41Server {
     /// Supply Per-Procedure Sequencing and Control
     ///
     /// [RFC 8881 Section 18.46](https://www.rfc-editor.org/rfc/rfc8881#OP_SEQUENCE)
-    fn sequence(&self, args: SequenceArgs) -> SequenceResult {
+    async fn sequence(&self, args: SequenceArgs) -> SequenceResult {
         todo!()
     }
 
     /// Set Attributes
     ///
     /// [RFC 8881 Section 18.30](https://www.rfc-editor.org/rfc/rfc8881#OP_SETATTR)
-    fn set_attributes(&self, args: SetAttributesArgs) -> SetAttributesResult {
+    async fn set_attributes(
+        &self,
+        args: SetAttributesArgs,
+    ) -> SetAttributesResult {
         todo!()
     }
 
     /// Update SSV for a Client ID
     ///
     /// [RFC 8881 Section 18.47](https://www.rfc-editor.org/rfc/rfc8881#OP_SET_SSV)
-    fn set_ssv(&self, args: SetSsvArgs) -> SetSsvResult {
+    async fn set_ssv(&self, args: SetSsvArgs) -> SetSsvResult {
         todo!()
     }
 
     /// Test `StateId`s for Validity
     ///
     /// [RFC 8881 Section 18.48](https://www.rfc-editor.org/rfc/rfc8881#OP_TEST_STATEID)
-    fn test_state_ids(&self, args: TestStateIdsArgs) -> TestStateIdsResult {
+    async fn test_state_ids(
+        &self,
+        args: TestStateIdsArgs,
+    ) -> TestStateIdsResult {
         todo!()
     }
 
     /// Verify Same Attributes
     ///
     /// [RFC 8881 Section 18.31](https://www.rfc-editor.org/rfc/rfc8881#OP_VERIFY)
-    fn verify(&self, args: VerifyArgs) -> VerifyResult {
+    async fn verify(&self, args: VerifyArgs) -> VerifyResult {
         todo!()
     }
 
     /// Request Delegation
     ///
     /// [RFC 8881 Section 18.49](https://www.rfc-editor.org/rfc/rfc8881#OP_WANT_DELEGATION)
-    fn want_delegation(
+    async fn want_delegation(
         &self,
         args: WantDelegationArgs,
     ) -> WantDelegationResult {
@@ -753,7 +949,7 @@ impl NFSv41Server {
     /// Write to File
     ///
     /// [RFC 8881 Section 18.32](https://www.rfc-editor.org/rfc/rfc8881#OP_WRITE)
-    fn write(&self, args: WriteArgs) -> WriteResult {
+    async fn write(&self, args: WriteArgs) -> WriteResult {
         todo!()
     }
 }

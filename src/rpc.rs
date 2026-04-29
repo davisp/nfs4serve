@@ -71,6 +71,8 @@ impl RpcConnection {
                 continue;
             }
 
+            log::debug!("RPC MESSAGE: {:#?}", ctx.call);
+
             if ctx.call.program == nfs::PROGRAM {
                 return Ok(ctx);
             }
@@ -104,6 +106,7 @@ pub struct RpcContext {
     auth: Option<AuthUnix>,
     reader: Cursor<Vec<u8>>,
     writer: Cursor<Vec<u8>>,
+    header_pos: u64,
 }
 
 impl RpcContext {
@@ -119,6 +122,7 @@ impl RpcContext {
             auth,
             reader,
             writer: Cursor::new(Vec::new()),
+            header_pos: 0,
         }
     }
 
@@ -140,6 +144,14 @@ impl RpcContext {
 
     pub fn success(&self) -> RpcMessage {
         RpcMessage::successful_reply(self.xid)
+    }
+
+    pub fn mark_header(&mut self) {
+        self.header_pos = self.writer.position();
+    }
+
+    pub fn header_pos(&self) -> u64 {
+        self.header_pos
     }
 
     /// Access to the underlying writer.

@@ -1,4 +1,4 @@
 absolute-paths-max-segments = 4
-allowed-duplicate-crates = ["redox_syscall"]
+allowed-duplicate-crates = ["redox_syscall", "hashbrown", "wit-bindgen"]
 semicolon-outside-block-ignore-multiline = true
 too-many-arguments-threshold = 10

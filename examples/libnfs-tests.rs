@@ -6,7 +6,6 @@ async fn main() -> Result<()> {
     stderrlog::new().verbosity(4).init().unwrap();
 
     let server = NFSv41Server::new("127.0.0.1:9342")
-        .await
         .context("Error creating server.")?;
     server.serve().await.context("The main server loop died.")
 }

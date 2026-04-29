@@ -21,6 +21,7 @@ filetime = "0.2"
 log = "0.4"
 num-traits = "0.2"
 num-derive = "0.4"
+rand = "0.10"
 tokio = { version = "1", features = ["full"] }
 
 [dev-dependencies]
@@ -43,6 +44,7 @@ blanket_clippy_restriction_lints = "allow"
 
 # Project Specific
 needless_pass_by_value = "allow" # This annoys me.
+big_endian_bytes = "allow"       # XDR is big endian regardless of platform.
 wildcard_imports = "allow"       # I'm not gonna type all the names out.
 missing_errors_doc = "allow"     # For now, I'm just using anyhow
 

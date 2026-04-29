@@ -957,10 +957,10 @@ impl XdrDeserialize for NfsClientId {
 }
 
 /// NFSv4.1 Client Owner (aka long hand client id)
-#[derive(Debug)]
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct ClientOwner {
-    verifier: Verifier,
-    owner_id: MaxLenBytes<NFS_OPAQUE_LIMIT>,
+    pub verifier: Verifier,
+    pub owner_id: MaxLenBytes<NFS_OPAQUE_LIMIT>,
 }
 
 impl XdrSerialize for ClientOwner {
@@ -982,9 +982,10 @@ impl XdrDeserialize for ClientOwner {
 }
 
 /// NFSv4.1 `ServerOwner`
+#[derive(Clone, Debug)]
 pub struct ServerOwner {
-    minor_id: u64,
-    major_id: MaxLenBytes<NFS_OPAQUE_LIMIT>,
+    pub minor_id: u64,
+    pub major_id: MaxLenBytes<NFS_OPAQUE_LIMIT>,
 }
 
 impl XdrSerialize for ServerOwner {
@@ -4014,10 +4015,10 @@ impl XdrDeserialize for StateProtectionArg {
 
 #[derive(Debug)]
 pub struct ExchangeIdArgs {
-    client_owner: ClientOwner,
-    flags: u32,
-    state_protect: StateProtectionArg,
-    client_impl_id: Option<NfsImplId>,
+    pub client_owner: ClientOwner,
+    pub flags: u32,
+    pub state_protect: StateProtectionArg,
+    pub client_impl_id: Option<NfsImplId>,
 }
 
 impl XdrSerialize for ExchangeIdArgs {
@@ -4135,13 +4136,13 @@ impl XdrDeserialize for StateProtectionResult {
 }
 
 pub struct ExchangeIdOk {
-    client_id: ClientId,
-    sequence_id: SequenceId,
-    flags: u32,
-    state_protection: StateProtectionResult,
-    server_owner: ServerOwner,
-    server_scope: MaxLenBytes<NFS_OPAQUE_LIMIT>,
-    server_impl_id: Option<NfsImplId>,
+    pub client_id: ClientId,
+    pub sequence_id: SequenceId,
+    pub flags: u32,
+    pub state_protection: StateProtectionResult,
+    pub server_owner: ServerOwner,
+    pub server_scope: MaxLenBytes<NFS_OPAQUE_LIMIT>,
+    pub server_impl_id: Option<NfsImplId>,
 }
 
 impl AsNfsStatus for ExchangeIdOk {}
