@@ -9,6 +9,8 @@ use crate::nfs::{NfsConnection, NfsOperation, NfsRequest, NfsStatus};
 
 macro_rules! handle {
     ($self:expr, $req:expr, $op:expr, $args:ty, $call:ident) => {
+        log::trace!("Handling NFS COMPOUND operation: {:?}", $op);
+
         let args = match $req.read::<$args>() {
             Ok(args) => args,
             Err(err) => {
@@ -17,6 +19,8 @@ macro_rules! handle {
                 return Ok(());
             }
         };
+
+        log::trace!("NFS COMPOUND operation args: {args:?}");
 
         match $self.$call(args) {
             Ok(ok) => $req

@@ -159,6 +159,7 @@ impl XdrDeserialize for Vec<Vec<u8>> {
     }
 }
 
+#[derive(Debug)]
 pub struct MaxLenBytes<const N: usize>(Vec<u8>);
 
 impl<const N: usize> MaxLenBytes<N> {

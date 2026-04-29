@@ -50,6 +50,7 @@ pub type LinkText = Utf8StringCaseSensitive;
 pub type PathName = Vec<Component>;
 pub type Verifier = [u8; NFS_VERIFIER_SIZE];
 
+#[derive(Debug)]
 pub struct NfsTime {
     seconds: i64,
     nseconds: u32,
@@ -276,6 +277,7 @@ impl XdrDeserialize for ModeMasked {
     }
 }
 
+#[derive(Debug)]
 pub struct SpecData {
     specdata1: u32,
     specdata2: u32,
@@ -325,6 +327,7 @@ impl XdrDeserialize for NetAddress {
     }
 }
 
+#[derive(Debug)]
 pub struct NfsImplId {
     domain: Utf8StringCaseInsensitive,
     name: Utf8StringCaseSensitive,
@@ -351,6 +354,7 @@ impl XdrDeserialize for NfsImplId {
     }
 }
 
+#[derive(Debug)]
 pub struct StateId {
     seqid: SeqId,
     other: [u8; 12],
@@ -500,6 +504,7 @@ impl XdrDeserialize for DeviceAddress {
     }
 }
 
+#[derive(Debug)]
 pub struct LayoutUpdate {
     typ: LayoutType,
     body: XdrOpaque,
@@ -532,6 +537,7 @@ pub enum LayoutReturnType {
 }
 xdr::serde_enum!(LayoutReturnType);
 
+#[derive(Debug)]
 pub struct LayoutReturnFile {
     offset: Offset,
     length: Length,
@@ -566,6 +572,7 @@ impl XdrDeserialize for LayoutReturnFile {
     }
 }
 
+#[derive(Debug)]
 pub enum LayoutReturn {
     File(LayoutReturnFile),
     FsId,
@@ -846,6 +853,7 @@ pub mod fattr {
     pub type FsLocationsInfo = super::FsLocationsInfo;
 }
 
+#[derive(Debug)]
 pub struct FileAttrs {
     mask: BitMap,
     attrs: AttrList,
@@ -949,6 +957,7 @@ impl XdrDeserialize for NfsClientId {
 }
 
 /// NFSv4.1 Client Owner (aka long hand client id)
+#[derive(Debug)]
 pub struct ClientOwner {
     verifier: Verifier,
     owner_id: MaxLenBytes<NFS_OPAQUE_LIMIT>,
@@ -996,6 +1005,7 @@ impl XdrDeserialize for ServerOwner {
     }
 }
 
+#[derive(Debug)]
 pub struct StateOwner {
     client_id: ClientId,
     owner: MaxLenBytes<NFS_OPAQUE_LIMIT>,
@@ -1330,6 +1340,7 @@ impl XdrDeserialize for NfsFileLayout {
     }
 }
 
+#[derive(Debug)]
 pub struct AccessArgs {
     access: u32,
 }
@@ -1377,6 +1388,7 @@ impl XdrDeserialize for AccessOk {
 
 pub type AccessResult = Result<AccessOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct CloseArgs {
     seq_id: SeqId,
     open_state_id: StateId,
@@ -1427,6 +1439,7 @@ impl XdrDeserialize for CloseOk {
 
 pub type CloseResult = Result<CloseOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct CommitArgs {
     offset: Offset,
     count: Count,
@@ -1474,6 +1487,7 @@ impl XdrDeserialize for CommitOk {
 
 pub type CommitResult = Result<CommitOk, NfsStatus>;
 
+#[derive(Debug)]
 pub enum CreateType {
     Link(LinkText),
     Block(SpecData),
@@ -1537,6 +1551,7 @@ impl XdrDeserialize for CreateType {
     }
 }
 
+#[derive(Debug)]
 pub struct CreateArgs {
     object_type: CreateType,
     object_name: Component,
@@ -1597,6 +1612,7 @@ impl XdrDeserialize for CreateOk {
 
 pub type CreateResult = Result<CreateOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct PurgeDelegationsArgs {
     client_id: ClientId,
 }
@@ -1619,6 +1635,7 @@ impl XdrDeserialize for PurgeDelegationsArgs {
 
 pub type PurgeDelegationsResult = Result<NfsStatus, NfsStatus>;
 
+#[derive(Debug)]
 pub struct ReturnDelegationArgs {
     delegation_state_id: StateId,
 }
@@ -1643,6 +1660,7 @@ impl XdrDeserialize for ReturnDelegationArgs {
 
 pub type ReturnDelegationResult = Result<NfsStatus, NfsStatus>;
 
+#[derive(Debug)]
 pub struct GetAttributesArgs {
     attr_request: BitMap,
 }
@@ -1711,6 +1729,7 @@ impl XdrDeserialize for GetFhOk {
 
 pub type GetFhResult = Result<GetFhOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct LinkArgs {
     new_name: Component,
 }
@@ -1755,6 +1774,7 @@ impl XdrDeserialize for LinkOk {
 
 pub type LinkResult = Result<LinkOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct OpenToLockOwner {
     open_seq_id: SeqId,
     open_state_id: StateId,
@@ -1789,6 +1809,7 @@ impl XdrDeserialize for OpenToLockOwner {
     }
 }
 
+#[derive(Debug)]
 pub struct ExistingLockOwner {
     state_id: StateId,
     seq_id: SeqId,
@@ -1812,6 +1833,7 @@ impl XdrDeserialize for ExistingLockOwner {
     }
 }
 
+#[derive(Debug)]
 pub enum Locker {
     OpenOwner(OpenToLockOwner),
     LockOwner(ExistingLockOwner),
@@ -1848,6 +1870,7 @@ impl XdrDeserialize for Locker {
     }
 }
 
+#[derive(Debug)]
 pub struct LockArgs {
     lock_type: NfsLockType,
     reclaim: bool,
@@ -1967,6 +1990,7 @@ impl XdrSerialize for LockReturn {
 
 pub type LockResult = Result<LockReturn, NfsStatus>;
 
+#[derive(Debug)]
 pub struct LockTestArgs {
     lock_type: NfsLockType,
     offset: Offset,
@@ -2026,6 +2050,7 @@ impl XdrSerialize for LockTestReturn {
 
 pub type LockTestResult = Result<LockTestReturn, NfsStatus>;
 
+#[derive(Debug)]
 pub struct LockReleaseArgs {
     lock_type: NfsLockType,
     seq_id: SeqId,
@@ -2088,6 +2113,7 @@ impl XdrDeserialize for LockReleaseOk {
 
 pub type LockReleaseResult = Result<LockReleaseOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct LookupArgs {
     object_name: Component,
 }
@@ -2112,6 +2138,7 @@ pub type LookupResult = Result<NfsStatus, NfsStatus>;
 
 pub type LookupParentResult = Result<NfsStatus, NfsStatus>;
 
+#[derive(Debug)]
 pub struct VerifyAttributeDifferenceArgs {
     object_attrs: FileAttrs,
 }
@@ -2144,6 +2171,7 @@ pub enum CreateMode {
 }
 xdr::serde_enum!(CreateMode);
 
+#[derive(Debug)]
 pub struct CreateVerifiedFileAttrs {
     verifier: Verifier,
     attrs: FileAttrs,
@@ -2167,6 +2195,7 @@ impl XdrDeserialize for CreateVerifiedFileAttrs {
     }
 }
 
+#[derive(Debug)]
 pub enum CreateHow {
     Unchecked(FileAttrs),
     Guarded(FileAttrs),
@@ -2233,6 +2262,7 @@ pub enum OpenType {
 }
 xdr::serde_enum!(OpenType);
 
+#[derive(Debug)]
 pub enum OpenFlag {
     NoCreate,
     Create(CreateHow),
@@ -2358,6 +2388,7 @@ pub enum OpenClaimType {
 }
 xdr::serde_enum!(OpenClaimType);
 
+#[derive(Debug)]
 pub struct CurrentDelegateOpenClaim {
     delegate_state_id: StateId,
     file: Component,
@@ -2384,6 +2415,7 @@ impl XdrDeserialize for CurrentDelegateOpenClaim {
     }
 }
 
+#[derive(Debug)]
 pub enum OpenClaim {
     // No special rights to file.
     // Ordinary OPEN of the specified file.
@@ -2489,6 +2521,7 @@ impl XdrDeserialize for OpenClaim {
     }
 }
 
+#[derive(Debug)]
 pub struct OpenArgs {
     seq_id: SeqId,
     share_access: u32,
@@ -2823,6 +2856,7 @@ impl XdrDeserialize for OpenOk {
 
 pub type OpenResult = Result<OpenOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct OpenAttributesArgs {
     create_dir: bool,
 }
@@ -2873,6 +2907,7 @@ impl XdrDeserialize for OpenConfirmArgs {
 
 pub type OpenConfirmResult = Result<NfsStatus, NfsStatus>;
 
+#[derive(Debug)]
 pub struct OpenDowngradeArgs {
     open_state_id: StateId,
     seq_id: SeqId,
@@ -2923,6 +2958,7 @@ impl XdrDeserialize for OpenDowngradeOk {
 
 pub type OpenDowngradeResult = Result<OpenDowngradeOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct PutFhArgs {
     object: NfsFh,
 }
@@ -2949,6 +2985,7 @@ pub type PutPublicFhResult = Result<NfsStatus, NfsStatus>;
 
 pub type PutRootFhResult = Result<NfsStatus, NfsStatus>;
 
+#[derive(Debug)]
 pub struct ReadArgs {
     state_id: StateId,
     offset: Offset,
@@ -3006,6 +3043,7 @@ impl XdrDeserialize for ReadOk {
 
 pub type ReadResult = Result<ReadOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct ReadDirectoryArgs {
     cookie: NfsCookie,
     cookie_verifier: Verifier,
@@ -3151,6 +3189,7 @@ impl XdrDeserialize for ReadLinkOk {
 
 pub type ReadLinkResult = Result<ReadLinkOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct RemoveArgs {
     target: Component,
 }
@@ -3195,6 +3234,7 @@ impl XdrDeserialize for RemoveOk {
 
 pub type RemoveResult = Result<RemoveOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct RenameArgs {
     old_name: Component,
     new_name: Component,
@@ -3275,6 +3315,7 @@ pub type RestoreFhResult = Result<NfsStatus, NfsStatus>;
 
 pub type SaveFhResult = Result<NfsStatus, NfsStatus>;
 
+#[derive(Debug)]
 pub struct SecurityInfoArgs {
     name: Component,
 }
@@ -3522,6 +3563,7 @@ impl XdrDeserialize for SetClientIdConfirmArgs {
 
 pub type SetClientIdConfirmResult = Result<NfsStatus, NfsStatus>;
 
+#[derive(Debug)]
 pub struct VerifyArgs {
     object_attrs: FileAttrs,
 }
@@ -3554,6 +3596,7 @@ pub enum StableHow {
 }
 xdr::serde_enum!(StableHow);
 
+#[derive(Debug)]
 pub struct WriteArgs {
     state_id: StateId,
     offset: Offset,
@@ -3649,6 +3692,7 @@ pub type IllegalInstructionResult = Result<NfsStatus, NfsStatus>;
 
 pub type GssHandle = XdrOpaque;
 
+#[derive(Debug)]
 pub struct GssCallbackHandles {
     gcbp_service: RpcGssSvc,
     gcbp_handle_from_server: GssHandle,
@@ -3679,6 +3723,7 @@ impl XdrDeserialize for GssCallbackHandles {
     }
 }
 
+#[derive(Debug)]
 pub enum CallbackSecurityParameters {
     None,
     Sys(AuthUnix),
@@ -3730,6 +3775,7 @@ impl XdrDeserialize for CallbackSecurityParameters {
     }
 }
 
+#[derive(Debug)]
 pub struct BackchannelControlArgs {
     callback_program: u32,
     security_parameters: CallbackSecurityParameters,
@@ -3768,6 +3814,7 @@ pub enum ChannelDirectionFromClient {
 }
 xdr::serde_enum!(ChannelDirectionFromClient);
 
+#[derive(Debug)]
 pub struct BindConnectionToSessionArgs {
     session_id: SessionId,
     channel_direction_from_client: ChannelDirectionFromClient,
@@ -3844,6 +3891,7 @@ impl XdrDeserialize for BindConnectionToSessionOk {
 pub type BindConnectionToSessionResult =
     Result<BindConnectionToSessionOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct StateProtectOps {
     must_enforce: BitMap,
     must_allow: BitMap,
@@ -3870,6 +3918,7 @@ impl XdrDeserialize for StateProtectOps {
     }
 }
 
+#[derive(Debug)]
 pub struct SsvStateProtectParameters {
     ops: StateProtectOps,
     hash_algorithms: Vec<SecOid>,
@@ -3917,6 +3966,7 @@ pub enum StateProtectHow {
 }
 xdr::serde_enum!(StateProtectHow);
 
+#[derive(Debug)]
 pub enum StateProtectionArg {
     None,
     MachineCredentials(StateProtectOps),
@@ -3962,6 +4012,7 @@ impl XdrDeserialize for StateProtectionArg {
     }
 }
 
+#[derive(Debug)]
 pub struct ExchangeIdArgs {
     client_owner: ClientOwner,
     flags: u32,
@@ -4133,6 +4184,7 @@ impl XdrDeserialize for ExchangeIdOk {
 
 pub type ExchangeIdResult = Result<ExchangeIdOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct ChannelAttrs {
     header_pad_size: Count,
     max_request_size: Count,
@@ -4179,6 +4231,7 @@ impl XdrDeserialize for ChannelAttrs {
     }
 }
 
+#[derive(Debug)]
 pub struct CreateSessionArgs {
     client_id: ClientId,
     sequence: SequenceId,
@@ -4267,6 +4320,7 @@ impl XdrDeserialize for CreateSessionOk {
 
 pub type CreateSessionResult = Result<CreateSessionOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct DestroySessionArgs {
     session_id: SessionId,
 }
@@ -4289,6 +4343,7 @@ impl XdrDeserialize for DestroySessionArgs {
 
 pub type DestroySessionResult = Result<NfsStatus, NfsStatus>;
 
+#[derive(Debug)]
 pub struct FreeStateIdArgs {
     state_id: StateId,
 }
@@ -4313,6 +4368,7 @@ pub type FreeStateIdResult = Result<NfsStatus, NfsStatus>;
 
 pub type AttributeNotice = NfsTime;
 
+#[derive(Debug)]
 pub struct GetDirectoryDelegationArgs {
     signal_delegation_available: bool,
     notification_types: BitMap,
@@ -4449,6 +4505,7 @@ impl XdrDeserialize for GetDirectoryDelegationNonFatal {
 pub type GetDirectoryDelegationResult =
     Result<GetDirectoryDelegationNonFatal, NfsStatus>;
 
+#[derive(Debug)]
 pub struct GetDeviceInfoArgs {
     device_id: DeviceId,
     layout_type: LayoutType,
@@ -4534,6 +4591,7 @@ impl XdrSerialize for GetDeviceInfoReturn {
 
 pub type GetDeviceInfoResult = Result<GetDeviceInfoReturn, NfsStatus>;
 
+#[derive(Debug)]
 pub struct GetDeviceListArgs {
     layout_type: LayoutType,
     max_devices: Count,
@@ -4606,6 +4664,7 @@ impl XdrDeserialize for GetDeviceListOk {
 
 pub type GetDeviceListResult = Result<GetDeviceListOk, NfsStatus>;
 
+#[derive(Debug)]
 pub enum NewTime {
     Changed(NfsTime),
     Unchanged,
@@ -4640,6 +4699,7 @@ impl XdrDeserialize for NewTime {
     }
 }
 
+#[derive(Debug)]
 pub enum NewOffset {
     Changed(Offset),
     Unchanged,
@@ -4674,6 +4734,7 @@ impl XdrDeserialize for NewOffset {
     }
 }
 
+#[derive(Debug)]
 pub struct LayoutCommitArgs {
     offset: Offset,
     length: Length,
@@ -4774,6 +4835,7 @@ impl XdrDeserialize for LayoutCommitOk {
 
 pub type LayoutCommitResult = Result<LayoutCommitOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct LayoutGetArgs {
     signal_layout_available: bool,
     layout_type: LayoutType,
@@ -4881,6 +4943,7 @@ impl XdrSerialize for LayoutGetReturn {
 
 pub type LayoutGetResult = Result<LayoutGetReturn, NfsStatus>;
 
+#[derive(Debug)]
 pub struct LayoutReturnArgs {
     reclaim: bool,
     layout_type: LayoutType,
@@ -4953,7 +5016,7 @@ impl XdrDeserialize for LayoutReturnReturn {
 
 pub type LayoutReturnResult = Result<LayoutReturnReturn, NfsStatus>;
 
-#[derive(Clone, Copy, FromPrimitive, ToPrimitive)]
+#[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
 #[repr(u32)]
 pub enum SecurityInfoNoNameStyle {
     CurrentFh = 0,
@@ -4965,6 +5028,7 @@ pub type SecurityInfoNoNameArgs = SecurityInfoNoNameStyle;
 
 pub type SecurityInfoNoNameResult = SecurityInfoResult;
 
+#[derive(Debug)]
 pub struct SequenceArgs {
     session_id: SessionId,
     sequence_id: SequenceId,
@@ -5065,6 +5129,7 @@ impl XdrDeserialize for SsaDigestInput {
     }
 }
 
+#[derive(Debug)]
 pub struct SetSsvArgs {
     ssv: XdrOpaque,
     digest: XdrOpaque,
@@ -5116,6 +5181,7 @@ impl XdrDeserialize for SetSsvOk {
 
 pub type SetSsvResult = Result<SetSsvOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct TestStateIdsArgs {
     state_ids: Vec<StateId>,
 }
@@ -5160,6 +5226,7 @@ impl XdrDeserialize for TestStateIdsOk {
 
 pub type TestStateIdsResult = Result<TestStateIdsOk, NfsStatus>;
 
+#[derive(Debug)]
 pub enum DelegationClaim {
     Previous(OpenDelegationType),
     CurrentFh,
@@ -5211,6 +5278,7 @@ impl XdrDeserialize for DelegationClaim {
     }
 }
 
+#[derive(Debug)]
 pub struct WantDelegationArgs {
     want: u32,
     claim: DelegationClaim,
@@ -5258,6 +5326,7 @@ impl XdrDeserialize for WantDelegationOk {
 
 pub type WantDelegationResult = Result<WantDelegationOk, NfsStatus>;
 
+#[derive(Debug)]
 pub struct DestroyClientIdArgs {
     client_id: ClientId,
 }
@@ -5280,6 +5349,7 @@ impl XdrDeserialize for DestroyClientIdArgs {
 
 pub type DestroyClientIdResult = Result<NfsStatus, NfsStatus>;
 
+#[derive(Debug)]
 pub struct ReclaimCompleteArgs {
     one_fs: bool,
 }

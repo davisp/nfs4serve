@@ -76,13 +76,19 @@ impl NfsConnection {
                 "Invalid RPC program logic."
             );
 
+            log::trace!("Reading NFS COMPOUND tag");
+
             let tag = rpc
                 .read::<Vec<u8>>()
                 .context("Error reading compound tag.")?;
 
+            log::trace!("Reading COMPOUND minor version.");
+
             let version = rpc
                 .read::<u32>()
                 .context("Error reading compound minor version.")?;
+
+            log::trace!("Minor version: {version}");
 
             if version != super::VERSION_MINOR {
                 rpc.write(&rpc.success())?;
@@ -96,6 +102,8 @@ impl NfsConnection {
             let num_ops = rpc
                 .read::<u32>()
                 .context("Error reading COMPOUND operation count.")?;
+
+            log::trace!("COMPOUND ops: {num_ops}");
 
             // At this point we have accepted the message for processing sow
             // we mark the RPC layer as successful. We're also pre-emptively
