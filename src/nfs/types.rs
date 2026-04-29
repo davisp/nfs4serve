@@ -4048,6 +4048,7 @@ impl XdrDeserialize for ExchangeIdArgs {
     }
 }
 
+#[derive(Debug)]
 pub struct SsvProtectionInfo {
     ops: StateProtectOps,
     hash_algorithm: u32,
@@ -4090,6 +4091,7 @@ impl XdrDeserialize for SsvProtectionInfo {
     }
 }
 
+#[derive(Debug)]
 pub enum StateProtectionResult {
     None,
     MachineCredentials(StateProtectOps),
@@ -4135,6 +4137,7 @@ impl XdrDeserialize for StateProtectionResult {
     }
 }
 
+#[derive(Debug)]
 pub struct ExchangeIdOk {
     pub client_id: ClientId,
     pub sequence_id: SequenceId,

@@ -17,7 +17,7 @@ impl Client {
             owner_id: owner.owner_id,
             verifier: owner.verifier,
             client_id,
-            sequence: 0,
+            sequence: 1,
             confirmed: false,
         }
     }

@@ -120,16 +120,11 @@ impl NfsConnection {
     }
 
     pub async fn send(&self, mut req: NfsRequest) -> Result<()> {
-        if !matches!(req.status, NfsStatus::Ok)
-            || req.replied as usize != req.num_ops
-        {
-            log::info!("Rewriting result.");
-            let pos = req.rpc.writer().position();
-            let res = req.rewrite_header();
-            req.rpc.writer().set_position(pos);
+        let pos = req.rpc.writer().position();
+        let res = req.rewrite_header();
+        req.rpc.writer().set_position(pos);
 
-            res?;
-        }
+        res?;
 
         self.conn
             .send(req.rpc)
@@ -184,10 +179,12 @@ impl NfsRequest {
 
     pub fn reply<T: XdrSerialize + AsNfsStatus>(
         &mut self,
+        op: NfsOperation,
         val: &T,
     ) -> std::io::Result<()> {
         self.status = val.as_status();
         self.replied += 1;
+        self.rpc.write(&op)?;
         self.rpc.write(&self.status)?;
         self.rpc.write(val)
     }

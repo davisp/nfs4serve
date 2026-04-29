@@ -8,8 +8,8 @@ use tokio::net::TcpListener;
 
 use crate::client::Client;
 use crate::nfs::constants::{
-    EXCHANGE_ID_FLAG_CONFIRMED_R, EXCHANGE_ID_FLAG_USE_NON_PNFS,
-    NFS_OPAQUE_LIMIT,
+    EXCHANGE_ID_FLAG_BIND_PRINC_STATEID, EXCHANGE_ID_FLAG_CONFIRMED_R,
+    EXCHANGE_ID_FLAG_USE_NON_PNFS, NFS_OPAQUE_LIMIT,
 };
 use crate::nfs::types::{
     AccessArgs, AccessResult, BackchannelControlArgs, BackchannelControlResult,
@@ -61,7 +61,7 @@ macro_rules! handle {
 
         match $self.$call(args).await {
             Ok(ok) => $req
-                .reply(&ok)
+                .reply($op, &ok)
                 .context(format!("Error replying to op {:?}", $op))?,
             Err(err) => $req.ack(err).context(format!(
                 "Error acking error for op {:?}: {err:?}",
@@ -77,7 +77,7 @@ macro_rules! handle_no_args {
 
         match $self.$call().await {
             Ok(ok) => $req
-                .reply(&ok)
+                .reply($op, &ok)
                 .context(format!("Error replying to op {:?}", $op))?,
             Err(err) => $req.ack(err).context(format!(
                 "Error acking error for op {:?}: {err:?}",
@@ -139,7 +139,7 @@ impl NFSv41Server {
         let server_owner = ServerOwner {
             minor_id: rand::rng().random::<u64>(),
             major_id: MaxLenBytes::<NFS_OPAQUE_LIMIT>::new(Vec::from(
-                "An NFSv4.1 Server In Rust. This should be more unique.",
+                "some-sort-of-unique-strng",
             ))
             .unwrap(),
         };
@@ -366,7 +366,7 @@ impl NFSv41Server {
                 };
 
                 let resp = self.set_attributes(args).await;
-                req.reply(&resp)
+                req.reply(op, &resp)
                     .context(format!("Error replying to op {op:?}"))?;
             }
             NfsOperation::Verify => {
@@ -619,10 +619,12 @@ impl NFSv41Server {
 
         let client = Client::new(args.client_owner, client_id);
 
+        let flags = EXCHANGE_ID_FLAG_USE_NON_PNFS;
+
         Ok(ExchangeIdOk {
             client_id,
             sequence_id: client.sequence,
-            flags: EXCHANGE_ID_FLAG_USE_NON_PNFS,
+            flags,
             state_protection: StateProtectionResult::None,
             server_owner: server.server_owner.clone(),
             server_scope: server.server_scope.clone(),

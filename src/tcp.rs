@@ -141,8 +141,6 @@ impl ConnectionWriter {
                 "TODO: Update to follow RFC 1057 Section 10."
             );
 
-            Self::debug_frame(&frame);
-
             #[expect(
                 clippy::cast_possible_truncation,
                 reason = "See the above assertion."
@@ -161,14 +159,5 @@ impl ConnectionWriter {
         }
 
         Ok(())
-    }
-
-    fn debug_frame(data: &[u8]) {
-        use crate::rpc;
-
-        let mut reader = Cursor::new(data);
-
-        let msg = rpc::RpcMessage::deserialize(&mut reader);
-        eprintln!("MSG: {msg:#?}");
     }
 }
