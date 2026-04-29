@@ -4243,7 +4243,7 @@ pub struct CreateSessionArgs {
     fore_channel_attrs: ChannelAttrs,
     back_channel_attrs: ChannelAttrs,
     callback_program: u32,
-    security_parameters: CallbackSecurityParameters,
+    security_parameters: Vec<CallbackSecurityParameters>,
 }
 
 impl XdrSerialize for CreateSessionArgs {
@@ -4254,7 +4254,7 @@ impl XdrSerialize for CreateSessionArgs {
         self.fore_channel_attrs.serialize(dest)?;
         self.back_channel_attrs.serialize(dest)?;
         self.callback_program.serialize(dest)?;
-        self.security_parameters.serialize(dest)?;
+        xdr::serialize_vec(dest, &self.security_parameters)?;
 
         Ok(())
     }
@@ -4268,7 +4268,8 @@ impl XdrDeserialize for CreateSessionArgs {
         let fore_channel_attrs = ChannelAttrs::deserialize(src)?;
         let back_channel_attrs = ChannelAttrs::deserialize(src)?;
         let callback_program = u32::deserialize(src)?;
-        let security_parameters = CallbackSecurityParameters::deserialize(src)?;
+        let security_parameters =
+            xdr::deserialize_vec::<_, CallbackSecurityParameters>(src)?;
 
         Ok(Self {
             client_id,
