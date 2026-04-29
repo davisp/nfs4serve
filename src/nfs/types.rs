@@ -3693,7 +3693,7 @@ pub type IllegalInstructionResult = Result<NfsStatus, NfsStatus>;
 
 pub type GssHandle = XdrOpaque;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct GssCallbackHandles {
     gcbp_service: RpcGssSvc,
     gcbp_handle_from_server: GssHandle,
@@ -3724,7 +3724,7 @@ impl XdrDeserialize for GssCallbackHandles {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum CallbackSecurityParameters {
     None,
     Sys(AuthUnix),
@@ -4188,7 +4188,7 @@ impl XdrDeserialize for ExchangeIdOk {
 
 pub type ExchangeIdResult = Result<ExchangeIdOk, NfsStatus>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ChannelAttrs {
     header_pad_size: Count,
     max_request_size: Count,
@@ -4235,15 +4235,15 @@ impl XdrDeserialize for ChannelAttrs {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CreateSessionArgs {
-    client_id: ClientId,
-    sequence: SequenceId,
-    flags: u32,
-    fore_channel_attrs: ChannelAttrs,
-    back_channel_attrs: ChannelAttrs,
-    callback_program: u32,
-    security_parameters: Vec<CallbackSecurityParameters>,
+    pub client_id: ClientId,
+    pub sequence: SequenceId,
+    pub flags: u32,
+    pub fore_channel_attrs: ChannelAttrs,
+    pub back_channel_attrs: ChannelAttrs,
+    pub callback_program: u32,
+    pub security_parameters: Vec<CallbackSecurityParameters>,
 }
 
 impl XdrSerialize for CreateSessionArgs {
@@ -4283,12 +4283,13 @@ impl XdrDeserialize for CreateSessionArgs {
     }
 }
 
+#[derive(Debug)]
 pub struct CreateSessionOk {
-    session_id: SessionId,
-    sequence: SequenceId,
-    flags: u32,
-    fore_channel_attrs: ChannelAttrs,
-    back_channel_attrs: ChannelAttrs,
+    pub session_id: SessionId,
+    pub sequence: SequenceId,
+    pub flags: u32,
+    pub fore_channel_attrs: ChannelAttrs,
+    pub back_channel_attrs: ChannelAttrs,
 }
 
 impl AsNfsStatus for CreateSessionOk {}

@@ -171,9 +171,14 @@ impl NfsRequest {
         self.rpc.read::<T>()
     }
 
-    pub fn ack(&mut self, status: NfsStatus) -> std::io::Result<()> {
+    pub fn ack(
+        &mut self,
+        op: NfsOperation,
+        status: NfsStatus,
+    ) -> std::io::Result<()> {
         self.status = status;
         self.replied += 1;
+        self.rpc.write(&op)?;
         self.rpc.write(&status)
     }
 

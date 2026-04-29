@@ -139,7 +139,11 @@ impl RpcContext {
     }
 
     pub fn write<T: XdrSerialize>(&mut self, val: &T) -> std::io::Result<()> {
-        val.serialize(&mut self.writer)
+        let before = self.writer.position();
+        let ret = val.serialize(&mut self.writer);
+        let diff = self.writer.position() - before;
+        log::trace!("WROTE BYTES {diff}");
+        ret
     }
 
     pub fn success(&self) -> RpcMessage {

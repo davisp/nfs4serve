@@ -2,7 +2,7 @@ use crate::nfs::constants::NFS_OPAQUE_LIMIT;
 use crate::nfs::types::{ClientId, ClientOwner, SequenceId, Verifier};
 use crate::xdr::MaxLenBytes;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Client {
     pub owner_id: MaxLenBytes<NFS_OPAQUE_LIMIT>,
     pub verifier: Verifier,

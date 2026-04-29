@@ -8,17 +8,17 @@ use tokio::net::TcpListener;
 
 use crate::client::Client;
 use crate::nfs::constants::{
-    EXCHANGE_ID_FLAG_BIND_PRINC_STATEID, EXCHANGE_ID_FLAG_CONFIRMED_R,
-    EXCHANGE_ID_FLAG_USE_NON_PNFS, NFS_OPAQUE_LIMIT,
+    EXCHANGE_ID_FLAG_CONFIRMED_R, EXCHANGE_ID_FLAG_USE_NON_PNFS,
+    NFS_OPAQUE_LIMIT,
 };
 use crate::nfs::types::{
     AccessArgs, AccessResult, BackchannelControlArgs, BackchannelControlResult,
     BindConnectionToSessionArgs, BindConnectionToSessionResult, ClientId,
     CloseArgs, CloseResult, CommitArgs, CommitResult, CreateArgs, CreateResult,
-    CreateSessionArgs, CreateSessionResult, DestroyClientIdArgs,
-    DestroyClientIdResult, DestroySessionArgs, DestroySessionResult,
-    ExchangeIdArgs, ExchangeIdOk, ExchangeIdResult, FreeStateIdArgs,
-    FreeStateIdResult, GetAttributesArgs, GetAttributesResult,
+    CreateSessionArgs, CreateSessionOk, CreateSessionResult,
+    DestroyClientIdArgs, DestroyClientIdResult, DestroySessionArgs,
+    DestroySessionResult, ExchangeIdArgs, ExchangeIdOk, ExchangeIdResult,
+    FreeStateIdArgs, FreeStateIdResult, GetAttributesArgs, GetAttributesResult,
     GetDeviceInfoArgs, GetDeviceInfoResult, GetDeviceListArgs,
     GetDeviceListResult, GetDirectoryDelegationArgs,
     GetDirectoryDelegationResult, GetFhResult, LayoutCommitArgs,
@@ -34,7 +34,7 @@ use crate::nfs::types::{
     RestoreFhResult, ReturnDelegationArgs, ReturnDelegationResult,
     SaveFhResult, SecurityInfoArgs, SecurityInfoNoNameArgs,
     SecurityInfoNoNameResult, SecurityInfoNoNameStyle, SecurityInfoResult,
-    SequenceArgs, SequenceResult, ServerOwner, SetAttributesArgs,
+    SequenceArgs, SequenceResult, ServerOwner, SessionId, SetAttributesArgs,
     SetAttributesResult, SetSsvArgs, SetSsvResult, StateProtectionArg,
     StateProtectionResult, TestStateIdsArgs, TestStateIdsResult, VerifyArgs,
     VerifyAttributeDifferenceArgs, VerifyAttributeDifferenceResult,
@@ -42,6 +42,7 @@ use crate::nfs::types::{
     WriteResult,
 };
 use crate::nfs::{NfsConnection, NfsOperation, NfsRequest, NfsStatus};
+use crate::session::Session;
 use crate::xdr::MaxLenBytes;
 
 macro_rules! handle {
@@ -52,7 +53,7 @@ macro_rules! handle {
             Ok(args) => args,
             Err(err) => {
                 log::error!("Error parsing arguments for {:?}: {err:?}", $op);
-                $req.ack(NfsStatus::ServerFault)?;
+                $req.ack($op, NfsStatus::ServerFault)?;
                 return Ok(());
             }
         };
@@ -63,7 +64,7 @@ macro_rules! handle {
             Ok(ok) => $req
                 .reply($op, &ok)
                 .context(format!("Error replying to op {:?}", $op))?,
-            Err(err) => $req.ack(err).context(format!(
+            Err(err) => $req.ack($op, err).context(format!(
                 "Error acking error for op {:?}: {err:?}",
                 $op
             ))?,
@@ -79,7 +80,7 @@ macro_rules! handle_no_args {
             Ok(ok) => $req
                 .reply($op, &ok)
                 .context(format!("Error replying to op {:?}", $op))?,
-            Err(err) => $req.ack(err).context(format!(
+            Err(err) => $req.ack($op, err).context(format!(
                 "Error acking error for op {:?}: {err:?}",
                 $op
             ))?,
@@ -95,6 +96,8 @@ pub struct NFSv41ServerInner {
     clients: HashMap<ClientId, Client>,
     client_ids_by_owner: HashMap<MaxLenBytes<NFS_OPAQUE_LIMIT>, ClientId>,
     next_client_id: u64,
+    sessions: HashMap<SessionId, Session>,
+    next_session_id: u128,
 }
 
 impl NFSv41ServerInner {
@@ -165,7 +168,9 @@ impl NFSv41Server {
             address,
             clients: HashMap::new(),
             client_ids_by_owner: HashMap::new(),
-            next_client_id: 0,
+            next_client_id: 1,
+            sessions: HashMap::new(),
+            next_session_id: 1,
         };
 
         Ok(Self {
@@ -229,7 +234,7 @@ impl NFSv41Server {
                         log::error!(
                             "Failed to read next COMPOUND operation: {err:?}"
                         );
-                        req.ack(NfsStatus::OpIllegal)?;
+                        req.ack(NfsOperation::Illegal, NfsStatus::OpIllegal)?;
                         conn.send(req).await?;
                         return Err(anyhow!(
                             "Client attempted to use an illegal operation."
@@ -360,7 +365,7 @@ impl NFSv41Server {
                         log::error!(
                             "Error parsing arguments for {op:?}: {err:?}"
                         );
-                        req.ack(NfsStatus::ServerFault)?;
+                        req.ack(op, NfsStatus::ServerFault)?;
                         return Ok(());
                     }
                 };
@@ -457,7 +462,7 @@ impl NFSv41Server {
                 handle!(self, req, op, ReclaimCompleteArgs, reclaim_complete);
             }
             NfsOperation::Illegal => req
-                .ack(NfsStatus::OpIllegal)
+                .ack(op, NfsStatus::OpIllegal)
                 .context(format!("Error replying to op {op:?}"))?,
         }
 
@@ -522,7 +527,45 @@ impl NFSv41Server {
         &self,
         args: CreateSessionArgs,
     ) -> CreateSessionResult {
-        todo!()
+        log::trace!("Create session for client_id: {}", args.client_id);
+
+        let mut server = self.inner.lock().expect("Server mutex was poisoned.");
+
+        let keys = server.clients.keys().copied().collect::<Vec<_>>();
+        log::trace!("Existing client ids: {keys:#?}");
+
+        // Technically we could burn this if the client doesn't exist. But it
+        // simplifies the ownership issues. Now is not the time to take a hard
+        // left into trying to figure out why we can't partial borrow in a
+        // single function scope. I'm sure there are reasons.
+        let session_id = server.next_session_id;
+        server.next_session_id += 1;
+
+        let session_id = session_id.to_be_bytes();
+
+        if let Some(client) = server.clients.get_mut(&args.client_id) {
+            if !client.confirmed {
+                client.confirmed = true;
+            }
+
+            let session = Session::new(args.clone());
+            server.sessions.insert(session_id, session);
+
+            drop(server);
+
+            let resp = CreateSessionOk {
+                session_id,
+                sequence: args.sequence,
+                flags: 0,
+                fore_channel_attrs: args.fore_channel_attrs,
+                back_channel_attrs: args.back_channel_attrs,
+            };
+
+            log::trace!("Replying with: {resp:#?}");
+            Ok(resp)
+        } else {
+            Err(NfsStatus::StaleClientId)
+        }
     }
 
     /// Purge Delegations Awaiting Recovery
@@ -618,6 +661,8 @@ impl NFSv41Server {
         server.next_client_id += 1;
 
         let client = Client::new(args.client_owner, client_id);
+
+        server.clients.insert(client_id, client.clone());
 
         let flags = EXCHANGE_ID_FLAG_USE_NON_PNFS;
 

@@ -4,6 +4,7 @@ mod client;
 mod nfs;
 mod rpc;
 mod server;
+mod session;
 mod tcp;
 mod xdr;
 
