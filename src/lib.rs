@@ -8,4 +8,5 @@ mod session;
 mod tcp;
 mod xdr;
 
+pub use crate::nfs::api::*;
 pub use crate::server::NFSv41Server;

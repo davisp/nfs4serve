@@ -7,6 +7,7 @@ use rand::RngExt as _;
 use tokio::net::TcpListener;
 
 use crate::client::Client;
+use crate::nfs::api::NfsHandler;
 use crate::nfs::constants::{
     EXCHANGE_ID_FLAG_CONFIRMED_R, EXCHANGE_ID_FLAG_USE_NON_PNFS,
     NFS_OPAQUE_LIMIT,
@@ -18,9 +19,9 @@ use crate::nfs::types::{
     CreateSessionArgs, CreateSessionOk, CreateSessionResult,
     DestroyClientIdArgs, DestroyClientIdResult, DestroySessionArgs,
     DestroySessionResult, ExchangeIdArgs, ExchangeIdOk, ExchangeIdResult,
-    FreeStateIdArgs, FreeStateIdResult, GetAttributesArgs, GetAttributesResult,
-    GetDeviceInfoArgs, GetDeviceInfoResult, GetDeviceListArgs,
-    GetDeviceListResult, GetDirectoryDelegationArgs,
+    FreeStateIdArgs, FreeStateIdResult, GetAttributesArgs, GetAttributesOk,
+    GetAttributesResult, GetDeviceInfoArgs, GetDeviceInfoResult,
+    GetDeviceListArgs, GetDeviceListResult, GetDirectoryDelegationArgs,
     GetDirectoryDelegationResult, GetFhResult, LayoutCommitArgs,
     LayoutCommitResult, LayoutGetArgs, LayoutGetResult, LayoutReturnArgs,
     LayoutReturnResult, LinkArgs, LinkResult, LockArgs, LockReleaseArgs,
@@ -41,7 +42,7 @@ use crate::nfs::types::{
     VerifyAttributeDifferenceResult, VerifyResult, WantDelegationArgs,
     WantDelegationResult, WriteArgs, WriteResult,
 };
-use crate::nfs::{NfsConnection, NfsOperation, NfsRequest, NfsStatus};
+use crate::nfs::{self, NfsConnection, NfsOperation, NfsRequest, NfsStatus};
 use crate::session::Session;
 use crate::xdr::MaxLenBytes;
 
@@ -61,13 +62,18 @@ macro_rules! handle {
         log::trace!("NFS COMPOUND operation args:\n{args:#?}");
 
         match $self.$call($req, args).await {
-            Ok(ok) => $req
-                .reply($op, &ok)
-                .context(format!("Error replying to op {:?}", $op))?,
-            Err(err) => $req.ack($op, err).context(format!(
-                "Error acking error for op {:?}: {err:?}",
-                $op
-            ))?,
+            Ok(ok) => {
+                log::trace!("Op {:?} OK reply: {ok:#?}", $op);
+                $req.reply($op, &ok)
+                    .context(format!("Error replying to op {:?}", $op))?;
+            }
+            Err(err) => {
+                log::trace!("Op {:?} ERR reply: {err:#?}", $op);
+                $req.ack($op, err).context(format!(
+                    "Error acking error for op {:?}: {err:?}",
+                    $op
+                ))?
+            }
         }
     };
 }
@@ -77,13 +83,18 @@ macro_rules! handle_no_args {
         log::trace!("Handling NFS COMPOUND operation: {:?} (No args)", $op);
 
         match $self.$call($req).await {
-            Ok(ok) => $req
-                .reply($op, &ok)
-                .context(format!("Error replying to op {:?}", $op))?,
-            Err(err) => $req.ack($op, err).context(format!(
-                "Error acking error for op {:?}: {err:?}",
-                $op
-            ))?,
+            Ok(ok) => {
+                log::trace!("Op {:?} OK reply: {ok:#?}", $op);
+                $req.reply($op, &ok)
+                    .context(format!("Error replying to op {:?}", $op))?
+            }
+            Err(err) => {
+                log::trace!("Op {:?} ERR reply: {err:#?}", $op);
+                $req.ack($op, err).context(format!(
+                    "Error acking error for op {:?}: {err:?}",
+                    $op
+                ))?
+            }
         }
     };
 }
@@ -130,14 +141,15 @@ impl NFSv41ServerInner {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct NFSv41Server {
     inner: Arc<Mutex<NFSv41ServerInner>>,
+    handler: Arc<dyn NfsHandler>,
 }
 
 impl NFSv41Server {
     /// Create a new server.
-    pub fn new(addr: &str) -> Result<Self> {
+    pub fn new(handler: Arc<dyn NfsHandler>, addr: &str) -> Result<Self> {
         #[expect(clippy::missing_panics_doc, reason = "It won't panic.")]
         let server_owner = ServerOwner {
             minor_id: rand::rng().random::<u64>(),
@@ -175,6 +187,7 @@ impl NFSv41Server {
 
         Ok(Self {
             inner: Arc::new(Mutex::new(inner)),
+            handler,
         })
     }
 
@@ -731,10 +744,44 @@ impl NFSv41Server {
     /// [RFC 8881 Section 18.7](https://www.rfc-editor.org/rfc/rfc8881#OP_GETATTR)
     async fn get_attributes(
         &self,
-        _req: &mut NfsRequest,
-        _args: GetAttributesArgs,
+        req: &NfsRequest,
+        args: GetAttributesArgs,
     ) -> GetAttributesResult {
-        todo!()
+        if req.session_id.is_none() {
+            return Err(NfsStatus::NotInSession);
+        }
+
+        let Some(fh) = req.current_fh.as_ref() else {
+            return Err(NfsStatus::NoFilehandle);
+        };
+
+        let attrs = nfs::attrs::protocol_to_api(&args.attr_request);
+        let resp = match self.handler.get_attributes(fh, &attrs).await {
+            Ok(vals) => vals,
+            Err(err) => {
+                log::error!(
+                    "Handler error in NfsHandler::get_attributes: {err:?}"
+                );
+                return Err(NfsStatus::ServerFault);
+            }
+        };
+
+        if resp.is_empty() {
+            // No idea which error is best for this case.
+            return Err(NfsStatus::ESTALE);
+        }
+
+        let attributes = match nfs::attrs::values_to_protocol(resp) {
+            Ok(attrs) => attrs,
+            Err(err) => {
+                log::error!(
+                    "nfs4server error converting attribute values to XDR {err:?}",
+                );
+                return Err(NfsStatus::ServerFault);
+            }
+        };
+
+        Ok(GetAttributesOk { attributes })
     }
 
     /// Get Device Info
@@ -925,8 +972,13 @@ impl NFSv41Server {
     /// Set Root Filehandle
     ///
     /// [RFC 8881 Section 18.21](https://www.rfc-editor.org/rfc/rfc8881#OP_PUTROOTFH)
-    async fn put_root_fh(&self, _req: &mut NfsRequest) -> PutRootFhResult {
-        todo!()
+    async fn put_root_fh(&self, req: &mut NfsRequest) -> PutRootFhResult {
+        let fh = self.handler.root_fh();
+
+        req.current_fh = Some(fh);
+        req.current_state_id = None;
+
+        Ok(NfsStatus::Ok)
     }
 
     /// Read from File

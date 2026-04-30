@@ -73,13 +73,13 @@ impl RpcConnection {
 
             log::debug!("RPC MESSAGE: {:#?}", ctx.call);
 
-            if ctx.call.program == nfs::PROGRAM {
+            if ctx.call.program == nfs::constants::PROGRAM {
                 return Ok(ctx);
             }
 
-            if ctx.call.program == nfs::PROGRAM_ACL
-                || ctx.call.program == nfs::PROGRAM_ID_MAP
-                || ctx.call.program == nfs::PROGRAM_METADATA
+            if ctx.call.program == nfs::constants::PROGRAM_ACL
+                || ctx.call.program == nfs::constants::PROGRAM_ID_MAP
+                || ctx.call.program == nfs::constants::PROGRAM_METADATA
             {
                 log::trace!("Ignoring NFS ACL RPC calls: {:?}", mesg.xid);
             } else {

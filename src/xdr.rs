@@ -271,6 +271,7 @@ impl XdrDeserialize for Vec<u32> {
     }
 }
 
+#[derive(Debug)]
 pub struct OptionalData<T>(Vec<T>);
 
 impl<T: XdrSerialize> XdrSerialize for OptionalData<T> {

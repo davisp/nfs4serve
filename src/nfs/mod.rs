@@ -1,3 +1,5 @@
+pub mod api;
+pub mod attrs;
 mod connection;
 pub mod constants;
 mod ops;
@@ -5,7 +7,6 @@ mod status;
 pub mod types;
 
 pub use connection::{NfsConnection, NfsRequest};
-pub use constants::*;
 pub use ops::NfsOperation;
 pub use status::NfsStatus;
 

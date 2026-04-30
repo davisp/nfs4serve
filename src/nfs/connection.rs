@@ -5,7 +5,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::cast::FromPrimitive as _;
 use tokio::net::TcpStream;
 
-use crate::nfs::types::{ClientId, SessionId};
+use crate::nfs::types::{ClientId, NfsFh, SessionId, StateId};
 use crate::nfs::{AsNfsStatus, NfsOperation, NfsStatus};
 use crate::rpc::{RpcConnection, RpcContext, RpcMessage};
 use crate::xdr::{XdrDeserialize, XdrSerialize};
@@ -36,16 +36,16 @@ impl NfsConnection {
                 .await
                 .context("Error reading next RPC message.")?;
 
-            if rpc.call().version != super::VERSION {
+            if rpc.call().version != super::constants::VERSION {
                 log::warn!(
                     "Client attempted an unsupported version of NFS: {} != {}",
                     rpc.call().version,
-                    super::VERSION
+                    super::constants::VERSION
                 );
 
                 rpc.write(&RpcMessage::program_mismatch_reply(
                     rpc.xid(),
-                    super::VERSION,
+                    super::constants::VERSION,
                 ))?;
 
                 self.conn.send(rpc).await?;
@@ -91,7 +91,7 @@ impl NfsConnection {
 
             log::trace!("Minor version: {version}");
 
-            if version != super::VERSION_MINOR {
+            if version != super::constants::VERSION_MINOR {
                 rpc.write(&rpc.success())?;
                 rpc.write(&NfsStatus::MinorVersionMismatch)?;
                 rpc.write(&tag)?;
@@ -139,6 +139,9 @@ pub struct NfsRequest {
     pub tag: Vec<u8>,
     pub client_id: Option<ClientId>,
     pub session_id: Option<SessionId>,
+    pub current_fh: Option<NfsFh>,
+    pub current_state_id: Option<StateId>,
+    pub saved_fh: Option<NfsFh>,
     pub num_ops: usize,
     pub curr_op: usize,
     pub status: NfsStatus,
@@ -152,6 +155,9 @@ impl NfsRequest {
             tag,
             client_id: None,
             session_id: None,
+            current_fh: None,
+            current_state_id: None,
+            saved_fh: None,
             num_ops: num_ops as usize,
             curr_op: 0,
             status: NfsStatus::Ok,

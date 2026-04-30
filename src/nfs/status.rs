@@ -6,7 +6,7 @@ use crate::xdr::{self, XdrDeserialize, XdrSerialize};
 /// NFS Status Codes
 #[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
 #[repr(u32)]
-#[expect(clippy::upper_case_acronyms, reason = "Errno variants")]
+//#[expect(clippy::upper_case_acronyms, reason = "Errno variants")]
 pub enum NfsStatus {
     Ok = 0,                                 // everything is okay
     EPERM = 1,                              // caller not privileged
@@ -44,7 +44,7 @@ pub enum NfsStatus {
     WrongSecurity = 10016,                  // wrong security flavor
     ClientIdInUse = 10017,                  // clientid in use
     Moved = 10019,                          // filesystem relocated
-    NoFileHandle = 10020,                   // current FH is not set
+    NoFilehandle = 10020,                   // current FH is not set
     MinorVersionMismatch = 10021,           // minor vers not supp
     StaleClientId = 10022,                  // server has rebooted
     StaleStateId = 10023,                   // server has rebooted
