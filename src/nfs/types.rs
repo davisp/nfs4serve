@@ -5078,6 +5078,7 @@ pub struct SequenceOk {
     pub sequence_id: SequenceId,
     pub slot_id: SlotId,
     pub highest_slot_id: SlotId,
+    pub target_highest_slot_id: SlotId,
     pub status_flags: u32,
 }
 
@@ -5089,6 +5090,7 @@ impl XdrSerialize for SequenceOk {
         self.sequence_id.serialize(dest)?;
         self.slot_id.serialize(dest)?;
         self.highest_slot_id.serialize(dest)?;
+        self.target_highest_slot_id.serialize(dest)?;
         self.status_flags.serialize(dest)?;
 
         Ok(())
@@ -5101,6 +5103,7 @@ impl XdrDeserialize for SequenceOk {
         let sequence_id = SequenceId::deserialize(src)?;
         let slot_id = SlotId::deserialize(src)?;
         let highest_slot_id = SlotId::deserialize(src)?;
+        let target_highest_slot_id = SlotId::deserialize(src)?;
         let status_flags = u32::deserialize(src)?;
 
         Ok(Self {
@@ -5108,6 +5111,7 @@ impl XdrDeserialize for SequenceOk {
             sequence_id,
             slot_id,
             highest_slot_id,
+            target_highest_slot_id,
             status_flags,
         })
     }

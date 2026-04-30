@@ -959,7 +959,7 @@ impl NFSv41Server {
     /// [RFC 8881 Section 18.51](https://www.rfc-editor.org/rfc/rfc8881#OP_RECLAIM_COMPLETE)
     async fn reclaim_complete(
         &self,
-        req: &mut NfsRequest,
+        req: &NfsRequest,
         args: ReclaimCompleteArgs,
     ) -> ReclaimCompleteResult {
         if args.one_fs {
@@ -1097,6 +1097,7 @@ impl NFSv41Server {
             sequence_id: args.sequence_id,
             slot_id: args.slot_id,
             highest_slot_id,
+            target_highest_slot_id: highest_slot_id,
             status_flags: 0,
         })
     }
