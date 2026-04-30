@@ -8,7 +8,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 
-use crate::xdr::{XdrDeserialize as _, XdrSerialize as _};
+use crate::xdr::XdrDeserialize as _;
 
 const RPC_LAST_FRAME: u32 = 0x80_00_00_00;
 const RPC_FRAME_LEN: u32 = 0x7F_FF_FF_FF;
