@@ -34,12 +34,12 @@ use crate::nfs::types::{
     RestoreFhResult, ReturnDelegationArgs, ReturnDelegationResult,
     SaveFhResult, SecurityInfoArgs, SecurityInfoNoNameArgs,
     SecurityInfoNoNameResult, SecurityInfoNoNameStyle, SecurityInfoResult,
-    SequenceArgs, SequenceResult, ServerOwner, SessionId, SetAttributesArgs,
-    SetAttributesResult, SetSsvArgs, SetSsvResult, StateProtectionArg,
-    StateProtectionResult, TestStateIdsArgs, TestStateIdsResult, VerifyArgs,
-    VerifyAttributeDifferenceArgs, VerifyAttributeDifferenceResult,
-    VerifyResult, WantDelegationArgs, WantDelegationResult, WriteArgs,
-    WriteResult,
+    SequenceArgs, SequenceOk, SequenceResult, ServerOwner, SessionId,
+    SetAttributesArgs, SetAttributesResult, SetSsvArgs, SetSsvResult,
+    StateProtectionArg, StateProtectionResult, TestStateIdsArgs,
+    TestStateIdsResult, VerifyArgs, VerifyAttributeDifferenceArgs,
+    VerifyAttributeDifferenceResult, VerifyResult, WantDelegationArgs,
+    WantDelegationResult, WriteArgs, WriteResult,
 };
 use crate::nfs::{NfsConnection, NfsOperation, NfsRequest, NfsStatus};
 use crate::session::Session;
@@ -625,10 +625,21 @@ impl NFSv41Server {
     /// [RFC 8881 Section 18.37](https://www.rfc-editor.org/rfc/rfc8881#OP_DESTROY_SESSION)
     async fn destroy_session(
         &self,
-        _req: &mut NfsRequest,
-        _args: DestroySessionArgs,
+        req: &mut NfsRequest,
+        args: DestroySessionArgs,
     ) -> DestroySessionResult {
-        todo!()
+        let mut server = self.inner.lock().expect("Server mutex was poisoned.");
+        let Some(_session) = server.sessions.remove(&args.session_id) else {
+            return Err(NfsStatus::BadSession);
+        };
+
+        // Eventually, cleanup anything related to the session here.
+
+        drop(server);
+
+        req.clear_session();
+
+        Ok(NfsStatus::Ok)
     }
 
     /// Instantiate a Client ID
@@ -948,10 +959,37 @@ impl NFSv41Server {
     /// [RFC 8881 Section 18.51](https://www.rfc-editor.org/rfc/rfc8881#OP_RECLAIM_COMPLETE)
     async fn reclaim_complete(
         &self,
-        _req: &mut NfsRequest,
-        _args: ReclaimCompleteArgs,
+        req: &mut NfsRequest,
+        args: ReclaimCompleteArgs,
     ) -> ReclaimCompleteResult {
-        todo!()
+        if args.one_fs {
+            return Err(NfsStatus::EINVAL);
+        }
+
+        if req.session_id.is_none() {
+            return Err(NfsStatus::NotInSession);
+        }
+
+        let Some(client_id) = req.client_id else {
+            log::error!("Request has a session_id but no client_id");
+            return Err(NfsStatus::ServerFault);
+        };
+
+        let mut server = self.inner.lock().expect("Server mutex was poisoned.");
+        let Some(client) = server.clients.get_mut(&client_id) else {
+            log::error!("Found an active session but client doesn't exist.");
+            return Err(NfsStatus::ServerFault);
+        };
+
+        if client.reclaim_complete {
+            return Err(NfsStatus::CompleteAlready);
+        }
+
+        client.reclaim_complete = true;
+
+        drop(server);
+
+        Ok(NfsStatus::Ok)
     }
 
     /// Remove File System Object
@@ -1019,10 +1057,48 @@ impl NFSv41Server {
     /// [RFC 8881 Section 18.46](https://www.rfc-editor.org/rfc/rfc8881#OP_SEQUENCE)
     async fn sequence(
         &self,
-        _req: &mut NfsRequest,
-        _args: SequenceArgs,
+        req: &mut NfsRequest,
+        args: SequenceArgs,
     ) -> SequenceResult {
-        todo!()
+        let mut server = self.inner.lock().expect("Server mutex was poisoned.");
+
+        let Some(session) = server.sessions.get_mut(&args.session_id) else {
+            return Err(NfsStatus::BadSession);
+        };
+
+        let slot_id = args.slot_id as usize;
+        if slot_id >= session.slots.len() {
+            session.slots.resize(slot_id + 1, None);
+        }
+
+        if let Some(prev_sequence_id) = session.slots[slot_id] {
+            if args.sequence_id == prev_sequence_id.wrapping_add(1) {
+                session.slots[slot_id] = Some(args.sequence_id);
+            } else if args.sequence_id == prev_sequence_id {
+                return Err(NfsStatus::RetryUncachedReply);
+            } else {
+                return Err(NfsStatus::SeqMisordered);
+            }
+        } else {
+            session.slots[slot_id] = Some(args.sequence_id);
+        }
+
+        // Store the current session id on the request for any future
+        // operations in the same COMPOUND procedure.
+        req.set_session(session.client_id, args.session_id);
+
+        #[expect(clippy::cast_possible_truncation, reason = "Fix later.")]
+        let highest_slot_id = (session.slots.len() - 1) as u32;
+
+        drop(server);
+
+        Ok(SequenceOk {
+            session_id: args.session_id,
+            sequence_id: args.sequence_id,
+            slot_id: args.slot_id,
+            highest_slot_id,
+            status_flags: 0,
+        })
     }
 
     /// Set Attributes

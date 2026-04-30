@@ -9,6 +9,7 @@ pub struct Client {
     pub client_id: ClientId,
     pub sequence: SequenceId,
     pub confirmed: bool,
+    pub reclaim_complete: bool,
 }
 
 impl Client {
@@ -19,6 +20,7 @@ impl Client {
             client_id,
             sequence: 1,
             confirmed: false,
+            reclaim_complete: false,
         }
     }
 }

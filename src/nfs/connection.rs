@@ -5,6 +5,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::cast::FromPrimitive as _;
 use tokio::net::TcpStream;
 
+use crate::nfs::types::{ClientId, SessionId};
 use crate::nfs::{AsNfsStatus, NfsOperation, NfsStatus};
 use crate::rpc::{RpcConnection, RpcContext, RpcMessage};
 use crate::xdr::{XdrDeserialize, XdrSerialize};
@@ -134,12 +135,14 @@ impl NfsConnection {
 }
 
 pub struct NfsRequest {
-    rpc: RpcContext,
-    tag: Vec<u8>,
-    num_ops: usize,
-    curr_op: usize,
-    status: NfsStatus,
-    replied: u32,
+    pub rpc: RpcContext,
+    pub tag: Vec<u8>,
+    pub client_id: Option<ClientId>,
+    pub session_id: Option<SessionId>,
+    pub num_ops: usize,
+    pub curr_op: usize,
+    pub status: NfsStatus,
+    pub replied: u32,
 }
 
 impl NfsRequest {
@@ -147,6 +150,8 @@ impl NfsRequest {
         Self {
             rpc,
             tag,
+            client_id: None,
+            session_id: None,
             num_ops: num_ops as usize,
             curr_op: 0,
             status: NfsStatus::Ok,
@@ -156,6 +161,15 @@ impl NfsRequest {
 
     pub fn num_ops(&self) -> usize {
         self.num_ops
+    }
+
+    pub fn set_session(&mut self, client_id: ClientId, session_id: SessionId) {
+        self.client_id = Some(client_id);
+        self.session_id = Some(session_id);
+    }
+
+    pub fn clear_session(&mut self) {
+        self.session_id = None;
     }
 
     pub fn next_op(&mut self) -> Result<NfsOperation> {

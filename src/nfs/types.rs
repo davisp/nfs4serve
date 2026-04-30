@@ -4190,13 +4190,13 @@ pub type ExchangeIdResult = Result<ExchangeIdOk, NfsStatus>;
 
 #[derive(Clone, Debug)]
 pub struct ChannelAttrs {
-    header_pad_size: Count,
-    max_request_size: Count,
-    max_response_size: Count,
-    max_response_size_cached: Count,
-    max_operations: Count,
-    max_requests: Count,
-    rdma_ird: Option<u32>,
+    pub header_pad_size: Count,
+    pub max_request_size: Count,
+    pub max_response_size: Count,
+    pub max_response_size_cached: Count,
+    pub max_operations: Count,
+    pub max_requests: Count,
+    pub rdma_ird: Option<u32>,
 }
 
 impl XdrSerialize for ChannelAttrs {
@@ -4328,7 +4328,7 @@ pub type CreateSessionResult = Result<CreateSessionOk, NfsStatus>;
 
 #[derive(Debug)]
 pub struct DestroySessionArgs {
-    session_id: SessionId,
+    pub session_id: SessionId,
 }
 
 impl XdrSerialize for DestroySessionArgs {
@@ -5036,11 +5036,11 @@ pub type SecurityInfoNoNameResult = SecurityInfoResult;
 
 #[derive(Debug)]
 pub struct SequenceArgs {
-    session_id: SessionId,
-    sequence_id: SequenceId,
-    slot_id: SlotId,
-    highest_slot_id: SlotId,
-    cache_this: bool,
+    pub session_id: SessionId,
+    pub sequence_id: SequenceId,
+    pub slot_id: SlotId,
+    pub highest_slot_id: SlotId,
+    pub cache_this: bool,
 }
 
 impl XdrSerialize for SequenceArgs {
@@ -5074,11 +5074,11 @@ impl XdrDeserialize for SequenceArgs {
 }
 
 pub struct SequenceOk {
-    session_id: SessionId,
-    sequence_id: SequenceId,
-    slot_id: SlotId,
-    highest_slot_id: SlotId,
-    status_flags: u32,
+    pub session_id: SessionId,
+    pub sequence_id: SequenceId,
+    pub slot_id: SlotId,
+    pub highest_slot_id: SlotId,
+    pub status_flags: u32,
 }
 
 impl AsNfsStatus for SequenceOk {}
@@ -5357,7 +5357,7 @@ pub type DestroyClientIdResult = Result<NfsStatus, NfsStatus>;
 
 #[derive(Debug)]
 pub struct ReclaimCompleteArgs {
-    one_fs: bool,
+    pub one_fs: bool,
 }
 
 impl XdrSerialize for ReclaimCompleteArgs {
