@@ -18,7 +18,7 @@ impl XdrSerialize for bool {
         if *self {
             dest.write_u32::<XdrEndian>(1)
         } else {
-            dest.write_u32::<XdrEndian>(2)
+            dest.write_u32::<XdrEndian>(0)
         }
     }
 }
