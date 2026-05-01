@@ -210,8 +210,12 @@ impl NfsRequest {
         self.status = val.as_status();
         self.replied += 1;
         self.rpc.write(&op)?;
-        self.rpc.write(&self.status)?;
-        self.rpc.write(val)
+        if val.has_body() {
+            self.rpc.write(&self.status)?;
+            self.rpc.write(val)
+        } else {
+            self.rpc.write(&self.status)
+        }
     }
 
     pub fn rewrite_header(&mut self) -> std::io::Result<()> {

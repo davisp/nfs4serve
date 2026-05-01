@@ -340,7 +340,7 @@ macro_rules! serde_enum {
                 &self,
                 dest: &mut W,
             ) -> std::io::Result<()> {
-                use byteorder::WriteBytesExt;
+                use byteorder::WriteBytesExt as _;
                 dest.write_u32::<$crate::xdr::XdrEndian>(*self as u32)
             }
         }

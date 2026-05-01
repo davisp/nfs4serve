@@ -22,7 +22,7 @@ use crate::nfs::types::{
     FreeStateIdArgs, FreeStateIdResult, GetAttributesArgs, GetAttributesOk,
     GetAttributesResult, GetDeviceInfoArgs, GetDeviceInfoResult,
     GetDeviceListArgs, GetDeviceListResult, GetDirectoryDelegationArgs,
-    GetDirectoryDelegationResult, GetFhResult, LayoutCommitArgs,
+    GetDirectoryDelegationResult, GetFhOk, GetFhResult, LayoutCommitArgs,
     LayoutCommitResult, LayoutGetArgs, LayoutGetResult, LayoutReturnArgs,
     LayoutReturnResult, LinkArgs, LinkResult, LockArgs, LockReleaseArgs,
     LockReleaseResult, LockResult, LockTestArgs, LockTestResult, LookupArgs,
@@ -809,8 +809,16 @@ impl NFSv41Server {
     /// Get Current Filehandle
     ///
     /// [RFC 8881 Section 18.8](https://www.rfc-editor.org/rfc/rfc8881#OP_GETFH)
-    async fn get_current_fh(&self, _req: &mut NfsRequest) -> GetFhResult {
-        todo!()
+    async fn get_current_fh(&self, req: &NfsRequest) -> GetFhResult {
+        if req.session_id.is_none() {
+            return Err(NfsStatus::NotInSession);
+        }
+
+        let Some(fh) = req.current_fh.as_ref() else {
+            return Err(NfsStatus::NoFilehandle);
+        };
+
+        Ok(GetFhOk { object: fh.clone() })
     }
 
     /// Get Directory Delegation
@@ -956,10 +964,16 @@ impl NFSv41Server {
     /// [RFC 8881 Section 18.19](https://www.rfc-editor.org/rfc/rfc8881#OP_PUTFH)
     async fn put_fh(
         &self,
-        _req: &mut NfsRequest,
-        _args: PutFhArgs,
+        req: &mut NfsRequest,
+        args: PutFhArgs,
     ) -> PutFhResult {
-        todo!()
+        if req.session_id.is_none() {
+            return Err(NfsStatus::NotInSession);
+        }
+
+        req.current_fh = Some(args.object);
+
+        Ok(NfsStatus::Ok)
     }
 
     /// Set Public Filehandle

@@ -119,4 +119,8 @@ impl AsNfsStatus for NfsStatus {
     fn as_status(&self) -> Self {
         *self
     }
+
+    fn has_body(&self) -> bool {
+        false
+    }
 }

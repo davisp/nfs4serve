@@ -962,7 +962,7 @@ impl XdrDeserialize for NfsClientId {
 }
 
 /// NFSv4.1 Client Owner (aka long hand client id)
-#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct ClientOwner {
     pub verifier: Verifier,
     pub owner_id: MaxLenBytes<NFS_OPAQUE_LIMIT>,
@@ -1718,7 +1718,7 @@ pub type GetAttributesResult = Result<GetAttributesOk, NfsStatus>;
 
 #[derive(Debug)]
 pub struct GetFhOk {
-    object: NfsFh,
+    pub object: NfsFh,
 }
 
 impl AsNfsStatus for GetFhOk {}
@@ -2987,7 +2987,7 @@ pub type OpenDowngradeResult = Result<OpenDowngradeOk, NfsStatus>;
 
 #[derive(Debug)]
 pub struct PutFhArgs {
-    object: NfsFh,
+    pub object: NfsFh,
 }
 
 impl XdrSerialize for PutFhArgs {

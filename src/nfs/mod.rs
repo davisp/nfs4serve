@@ -14,4 +14,8 @@ pub trait AsNfsStatus {
     fn as_status(&self) -> NfsStatus {
         NfsStatus::Ok
     }
+
+    fn has_body(&self) -> bool {
+        true
+    }
 }

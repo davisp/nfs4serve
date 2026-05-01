@@ -45,18 +45,13 @@ impl RpcConnection {
                 }
             };
 
-            let auth = if matches!(call.credentials.flavor, AuthFlavor::Unix) {
-                Some(
+            let auth = matches!(call.credentials.flavor, AuthFlavor::Unix)
+                .then(|| {
                     AuthUnix::deserialize(&mut Cursor::new(
                         &call.credentials.body,
                     ))
-                    .context(
-                        "Error deserialize unix authentication in call body.",
-                    )?,
-                )
-            } else {
-                None
-            };
+                })
+                .transpose()?;
 
             let mut ctx = RpcContext::new(mesg.xid, call, auth, reader);
 
