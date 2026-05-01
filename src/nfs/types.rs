@@ -10,9 +10,10 @@ use crate::xdr::{self, MaxLenBytes, XdrDeserialize, XdrOpaque, XdrSerialize};
 
 // From RFC 5662: https://www.rfc-editor.org/rfc/rfc5662.txt
 
-#[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
+#[derive(Clone, Copy, Debug, Default, FromPrimitive, ToPrimitive)]
 #[repr(u32)]
 pub enum NfsFileType {
+    #[default]
     Regular = 1,
     Directory = 2,
     Block = 3,
@@ -20,10 +21,52 @@ pub enum NfsFileType {
     Link = 5,
     Socket = 6,
     Fifo = 7,
-    AttrDirectory = 8,
-    NamedAttr = 9,
+    AttributeDirectory = 8,
+    NamedAttribute = 9,
 }
 xdr::serde_enum!(NfsFileType);
+
+#[derive(Clone, Copy, Debug, Default, FromPrimitive, ToPrimitive)]
+pub enum NfsExpirationPolicy {
+    /// The object won't expire until removed from the file system.
+    #[default]
+    Persistent = 0,
+
+    /// The object may expire at any time.
+    Volatile = 2,
+
+    /// The object may expire at any time, except if it is open.
+    VolatileExceptWhenOpen = 3,
+}
+xdr::serde_enum!(NfsExpirationPolicy);
+
+/// An identifier for a particular filesystem.
+///
+/// Most users will likely just want to have a single id that is returned
+/// for all `NfsAttribute::FilesystemId` attribute requests.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NfsFileSystemId {
+    pub major: u64,
+    pub minor: u64,
+}
+
+impl XdrSerialize for NfsFileSystemId {
+    fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
+        self.major.serialize(dest)?;
+        self.minor.serialize(dest)?;
+
+        Ok(())
+    }
+}
+
+impl XdrDeserialize for NfsFileSystemId {
+    fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
+        let major = u64::deserialize(src)?;
+        let minor = u64::deserialize(src)?;
+
+        Ok(Self { major, minor })
+    }
+}
 
 pub type AttrList = XdrOpaque;
 pub type BitMap = Vec<u32>;
@@ -47,13 +90,13 @@ pub type Utf8StringCaseInsensitive = Utf8String;
 pub type Utf8StringMixed = Utf8String;
 pub type Component = Utf8StringCaseSensitive;
 pub type LinkText = Utf8StringCaseSensitive;
-pub type PathName = Vec<Component>;
+pub type NfsPathName = Vec<Component>;
 pub type Verifier = [u8; NFS_VERIFIER_SIZE];
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct NfsTime {
-    seconds: i64,
-    nseconds: u32,
+    pub seconds: i64,
+    pub nseconds: u32,
 }
 
 impl XdrSerialize for NfsTime {
@@ -118,12 +161,13 @@ impl XdrDeserialize for FsId {
     }
 }
 
-pub struct ChangePolicy {
-    major: u64,
-    minor: u64,
+#[derive(Clone, Copy, Debug)]
+pub struct NfsChangePolicy {
+    pub major: u64,
+    pub minor: u64,
 }
 
-impl XdrSerialize for ChangePolicy {
+impl XdrSerialize for NfsChangePolicy {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.major.serialize(dest)?;
         self.minor.serialize(dest)?;
@@ -132,7 +176,7 @@ impl XdrSerialize for ChangePolicy {
     }
 }
 
-impl XdrDeserialize for ChangePolicy {
+impl XdrDeserialize for NfsChangePolicy {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let major = u64::deserialize(src)?;
         let minor = u64::deserialize(src)?;
@@ -141,12 +185,13 @@ impl XdrDeserialize for ChangePolicy {
     }
 }
 
-pub struct FsLocation {
+#[derive(Clone, Debug)]
+pub struct NfsFsLocation {
     server: Utf8StringCaseInsensitive,
-    pathname: PathName, // rootpath in the rfc, undefined AFAICT
+    pathname: NfsPathName, // rootpath in the rfc, undefined AFAICT
 }
 
-impl XdrSerialize for FsLocation {
+impl XdrSerialize for NfsFsLocation {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.server.serialize(dest)?;
         self.pathname.serialize(dest)?;
@@ -155,21 +200,22 @@ impl XdrSerialize for FsLocation {
     }
 }
 
-impl XdrDeserialize for FsLocation {
+impl XdrDeserialize for NfsFsLocation {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let server = Utf8StringCaseInsensitive::deserialize(src)?;
-        let pathname = PathName::deserialize(src)?;
+        let pathname = NfsPathName::deserialize(src)?;
 
         Ok(Self { server, pathname })
     }
 }
 
-pub struct FsLocations {
-    root: PathName,
-    locations: Vec<FsLocation>,
+#[derive(Clone, Debug)]
+pub struct NfsFsLocations {
+    root: NfsPathName,
+    locations: Vec<NfsFsLocation>,
 }
 
-impl XdrSerialize for FsLocations {
+impl XdrSerialize for NfsFsLocations {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.root.serialize(dest)?;
         xdr::serialize_vec(dest, &self.locations)?;
@@ -178,25 +224,25 @@ impl XdrSerialize for FsLocations {
     }
 }
 
-impl XdrDeserialize for FsLocations {
+impl XdrDeserialize for NfsFsLocations {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-        let root = PathName::deserialize(src)?;
-        let locations = xdr::deserialize_vec::<_, FsLocation>(src)?;
+        let root = NfsPathName::deserialize(src)?;
+        let locations = xdr::deserialize_vec::<_, NfsFsLocation>(src)?;
 
         Ok(Self { root, locations })
     }
 }
 
 // Ace = Access Control Entity
-pub type AceType = u32;
-pub type AceFlag = u32;
-pub type AceMask = u32;
+pub type NfsAceType = u32;
+pub type NfsAceFlag = u32;
+pub type NfsAceMask = u32;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NfsAce {
-    typ: AceType,
-    flag: AceFlag,
-    access_mask: AceMask,
+    typ: NfsAceType,
+    flag: NfsAceFlag,
+    access_mask: NfsAceMask,
     who: Utf8StringMixed,
 }
 
@@ -213,9 +259,9 @@ impl XdrSerialize for NfsAce {
 
 impl XdrDeserialize for NfsAce {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-        let typ = AceType::deserialize(src)?;
-        let flag = AceFlag::deserialize(src)?;
-        let access_mask = AceMask::deserialize(src)?;
+        let typ = NfsAceType::deserialize(src)?;
+        let flag = NfsAceFlag::deserialize(src)?;
+        let access_mask = NfsAceMask::deserialize(src)?;
         let who = Utf8StringMixed::deserialize(src)?;
 
         Ok(Self {
@@ -227,10 +273,10 @@ impl XdrDeserialize for NfsAce {
     }
 }
 
-pub type AclFlag = u32;
+pub type NfsAclFlag = u32;
 
 pub struct NfsAcl {
-    flag: AclFlag,
+    flag: NfsAclFlag,
     aces: Vec<NfsAce>,
 }
 
@@ -245,19 +291,20 @@ impl XdrSerialize for NfsAcl {
 
 impl XdrDeserialize for NfsAcl {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-        let flag = AclFlag::deserialize(src)?;
+        let flag = NfsAclFlag::deserialize(src)?;
         let aces = xdr::deserialize_vec::<_, NfsAce>(src)?;
 
         Ok(Self { flag, aces })
     }
 }
 
-pub struct ModeMasked {
-    value_to_set: Mode,
-    mask_bits: Mode,
+#[derive(Clone, Copy, Debug)]
+pub struct NfsModeMasked {
+    pub value_to_set: u32,
+    pub mask_bits: u32,
 }
 
-impl XdrSerialize for ModeMasked {
+impl XdrSerialize for NfsModeMasked {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.value_to_set.serialize(dest)?;
         self.mask_bits.serialize(dest)?;
@@ -266,7 +313,7 @@ impl XdrSerialize for ModeMasked {
     }
 }
 
-impl XdrDeserialize for ModeMasked {
+impl XdrDeserialize for NfsModeMasked {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let value_to_set = Mode::deserialize(src)?;
         let mask_bits = Mode::deserialize(src)?;
@@ -278,13 +325,13 @@ impl XdrDeserialize for ModeMasked {
     }
 }
 
-#[derive(Debug)]
-pub struct SpecData {
-    specdata1: u32,
-    specdata2: u32,
+#[derive(Clone, Copy, Debug)]
+pub struct NfsSpecData {
+    pub specdata1: u32,
+    pub specdata2: u32,
 }
 
-impl XdrSerialize for SpecData {
+impl XdrSerialize for NfsSpecData {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.specdata1.serialize(dest)?;
         self.specdata1.serialize(dest)?;
@@ -293,7 +340,7 @@ impl XdrSerialize for SpecData {
     }
 }
 
-impl XdrDeserialize for SpecData {
+impl XdrDeserialize for NfsSpecData {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let specdata1 = u32::deserialize(src)?;
         let specdata2 = u32::deserialize(src)?;
@@ -381,16 +428,16 @@ impl XdrDeserialize for StateId {
 
 #[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
 #[repr(u32)]
-pub enum LayoutType {
+pub enum NfsLayoutType {
     NfsV41Files = 1,
     Osd2Objects = 2,
     BlockVolume = 3,
 }
-xdr::serde_enum!(LayoutType);
+xdr::serde_enum!(NfsLayoutType);
 
 #[derive(Debug)]
 pub struct LayoutContent {
-    typ: LayoutType,
+    typ: NfsLayoutType,
     body: XdrOpaque,
 }
 
@@ -405,19 +452,20 @@ impl XdrSerialize for LayoutContent {
 
 impl XdrDeserialize for LayoutContent {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-        let typ = LayoutType::deserialize(src)?;
+        let typ = NfsLayoutType::deserialize(src)?;
         let body = XdrOpaque::deserialize(src)?;
 
         Ok(Self { typ, body })
     }
 }
 
-pub struct LayoutHint {
-    typ: LayoutType,
+#[derive(Clone, Debug)]
+pub struct NfsLayoutHint {
+    typ: NfsLayoutType,
     body: XdrOpaque,
 }
 
-impl XdrSerialize for LayoutHint {
+impl XdrSerialize for NfsLayoutHint {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.typ.serialize(dest)?;
         self.body.serialize(dest)?;
@@ -426,9 +474,9 @@ impl XdrSerialize for LayoutHint {
     }
 }
 
-impl XdrDeserialize for LayoutHint {
+impl XdrDeserialize for NfsLayoutHint {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-        let typ = LayoutType::deserialize(src)?;
+        let typ = NfsLayoutType::deserialize(src)?;
         let body = XdrOpaque::deserialize(src)?;
 
         Ok(Self { typ, body })
@@ -483,7 +531,7 @@ pub type DeviceId = [u8; NFS_DEVICEID_SIZE];
 
 #[derive(Debug)]
 pub struct DeviceAddress {
-    layout_type: LayoutType,
+    layout_type: NfsLayoutType,
     addr_body: XdrOpaque,
 }
 
@@ -498,7 +546,7 @@ impl XdrSerialize for DeviceAddress {
 
 impl XdrDeserialize for DeviceAddress {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-        let layout_type = LayoutType::deserialize(src)?;
+        let layout_type = NfsLayoutType::deserialize(src)?;
         let addr_body = XdrOpaque::deserialize(src)?;
 
         Ok(Self {
@@ -510,7 +558,7 @@ impl XdrDeserialize for DeviceAddress {
 
 #[derive(Debug)]
 pub struct LayoutUpdate {
-    typ: LayoutType,
+    typ: NfsLayoutType,
     body: XdrOpaque,
 }
 
@@ -525,7 +573,7 @@ impl XdrSerialize for LayoutUpdate {
 
 impl XdrDeserialize for LayoutUpdate {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-        let typ = LayoutType::deserialize(src)?;
+        let typ = NfsLayoutType::deserialize(src)?;
         let body = XdrOpaque::deserialize(src)?;
 
         Ok(Self { typ, body })
@@ -623,7 +671,8 @@ pub enum FsStatusType {
 }
 xdr::serde_enum!(FsStatusType);
 
-pub struct FsStatus {
+#[derive(Clone, Debug)]
+pub struct NfsFsStatus {
     absent: bool,
     typ: FsStatusType,
     source: Utf8StringCaseSensitive,
@@ -632,7 +681,7 @@ pub struct FsStatus {
     version: NfsTime,
 }
 
-impl XdrSerialize for FsStatus {
+impl XdrSerialize for NfsFsStatus {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.absent.serialize(dest)?;
         self.typ.serialize(dest)?;
@@ -645,7 +694,7 @@ impl XdrSerialize for FsStatus {
     }
 }
 
-impl XdrDeserialize for FsStatus {
+impl XdrDeserialize for NfsFsStatus {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let absent = bool::deserialize(src)?;
         let typ = FsStatusType::deserialize(src)?;
@@ -671,7 +720,7 @@ pub type ThresholdReadIoSize = Length;
 pub type ThresholdWriteIoSize = Length;
 
 pub struct ThresholdItem {
-    layout_type: LayoutType,
+    layout_type: NfsLayoutType,
     hintset: BitMap,
     hintlist: XdrOpaque,
 }
@@ -688,7 +737,7 @@ impl XdrSerialize for ThresholdItem {
 
 impl XdrDeserialize for ThresholdItem {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-        let layout_type = LayoutType::deserialize(src)?;
+        let layout_type = NfsLayoutType::deserialize(src)?;
         let hintset = BitMap::deserialize(src)?;
         let hintlist = XdrOpaque::deserialize(src)?;
 
@@ -798,7 +847,7 @@ pub mod fattr {
     pub type FileHandle = NfsFh;
     pub type FilesFree = u64;
     pub type FilesTotal = u64;
-    pub type FsLocations = super::FsLocations;
+    pub type FsLocations = super::NfsFsLocations;
     pub type Hidden = bool;
     pub type Homogenous = bool;
     pub type MaxFileSize = u64;
@@ -808,7 +857,7 @@ pub mod fattr {
     pub type MaxWrite = u32;
     pub type MimeType = Utf8StringCaseSensitive;
     pub type Mode = super::Mode;
-    pub type ModeSetMasked = ModeMasked;
+    pub type ModeSetMasked = NfsModeMasked;
     pub type MountedOnFileId = u64;
     pub type NoTrunc = bool;
     pub type NumLinks = u32;
@@ -817,7 +866,7 @@ pub mod fattr {
     pub type QuotaAvailableHard = u64;
     pub type QuotaAvailableSoft = u64;
     pub type QuoteUsed = u64;
-    pub type RawDevice = SpecData;
+    pub type RawDevice = NfsSpecData;
     pub type SpaceAvailable = u64;
     pub type SpaceFree = u64;
     pub type SpaceTotal = u64;
@@ -836,13 +885,13 @@ pub mod fattr {
     pub type SupportAttrExclusiveCreate = BitMap;
     pub type DirectoryNotifyDelay = NfsTime;
     pub type DirectoryEntryNotifyDelay = NfsTime;
-    pub type FsLayoutTypes = Vec<LayoutType>;
-    pub type FsStatus = super::FsStatus;
+    pub type FsLayoutTypes = Vec<NfsLayoutType>;
+    pub type FsStatus = super::NfsFsStatus;
     pub type FsCharasetCap = super::FsCharsetCap;
     pub type LayoutAlignment = u32;
     pub type LayoutBlocksize = u32;
-    pub type LayoutHint = super::LayoutHint;
-    pub type LayoutTypes = Vec<LayoutType>;
+    pub type LayoutHint = super::NfsLayoutHint;
+    pub type LayoutTypes = Vec<NfsLayoutType>;
     pub type MdsThreshold = super::MdsThreshold;
     pub type RetentionGet = super::RetentionGet;
     pub type RetentionSet = super::RetentionSet;
@@ -851,10 +900,10 @@ pub mod fattr {
     pub type RetentionHold = u64;
     pub type DAcl = NfsAcl;
     pub type SAcl = NfsAcl;
-    pub type ChangePolic = super::ChangePolicy;
+    pub type ChangePolicy = super::NfsChangePolicy;
 
     // From further down the RFC
-    pub type FsLocationsInfo = super::FsLocationsInfo;
+    pub type FsLocationsInfo = super::NfsFsLocationsInfo;
 }
 
 #[derive(Debug)]
@@ -1152,13 +1201,14 @@ impl XdrDeserialize for SsvSealCipherToken {
     }
 }
 
-pub struct FsLocationsServer {
+#[derive(Clone, Debug)]
+pub struct NfsFsLocationsServer {
     currency: i32,
     info: XdrOpaque,
     server: Utf8StringCaseInsensitive,
 }
 
-impl XdrSerialize for FsLocationsServer {
+impl XdrSerialize for NfsFsLocationsServer {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.currency.serialize(dest)?;
         self.info.serialize(dest)?;
@@ -1168,7 +1218,7 @@ impl XdrSerialize for FsLocationsServer {
     }
 }
 
-impl XdrDeserialize for FsLocationsServer {
+impl XdrDeserialize for NfsFsLocationsServer {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let currency = i32::deserialize(src)?;
         let info = XdrOpaque::deserialize(src)?;
@@ -1182,12 +1232,13 @@ impl XdrDeserialize for FsLocationsServer {
     }
 }
 
-pub struct FsLocationsItem {
-    entries: Vec<FsLocationsServer>,
-    rootpath: PathName,
+#[derive(Clone, Debug)]
+pub struct NfsFsLocationsItem {
+    entries: Vec<NfsFsLocationsServer>,
+    rootpath: NfsPathName,
 }
 
-impl XdrSerialize for FsLocationsItem {
+impl XdrSerialize for NfsFsLocationsItem {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         xdr::serialize_vec(dest, &self.entries)?;
         self.rootpath.serialize(dest)?;
@@ -1196,23 +1247,24 @@ impl XdrSerialize for FsLocationsItem {
     }
 }
 
-impl XdrDeserialize for FsLocationsItem {
+impl XdrDeserialize for NfsFsLocationsItem {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-        let entries = xdr::deserialize_vec::<_, FsLocationsServer>(src)?;
-        let rootpath = PathName::deserialize(src)?;
+        let entries = xdr::deserialize_vec::<_, NfsFsLocationsServer>(src)?;
+        let rootpath = NfsPathName::deserialize(src)?;
 
         Ok(Self { entries, rootpath })
     }
 }
 
-pub struct FsLocationsInfo {
+#[derive(Clone, Debug)]
+pub struct NfsFsLocationsInfo {
     flags: u32,
     valid_for: i32,
-    fs_root: PathName,
-    items: Vec<FsLocationsItem>,
+    fs_root: NfsPathName,
+    items: Vec<NfsFsLocationsItem>,
 }
 
-impl XdrSerialize for FsLocationsInfo {
+impl XdrSerialize for NfsFsLocationsInfo {
     fn serialize<W: Write>(&self, dest: &mut W) -> std::io::Result<()> {
         self.flags.serialize(dest)?;
         self.valid_for.serialize(dest)?;
@@ -1223,12 +1275,12 @@ impl XdrSerialize for FsLocationsInfo {
     }
 }
 
-impl XdrDeserialize for FsLocationsInfo {
+impl XdrDeserialize for NfsFsLocationsInfo {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let flags = u32::deserialize(src)?;
         let valid_for = i32::deserialize(src)?;
-        let fs_root = PathName::deserialize(src)?;
-        let items = xdr::deserialize_vec::<_, FsLocationsItem>(src)?;
+        let fs_root = NfsPathName::deserialize(src)?;
+        let items = xdr::deserialize_vec::<_, NfsFsLocationsItem>(src)?;
 
         Ok(Self {
             flags,
@@ -1499,8 +1551,8 @@ pub type CommitResult = Result<CommitOk, NfsStatus>;
 #[derive(Debug)]
 pub enum CreateType {
     Link(LinkText),
-    Block(SpecData),
-    Character(SpecData),
+    Block(NfsSpecData),
+    Character(NfsSpecData),
     Socket,
     Fifo,
     Directory,
@@ -1541,19 +1593,19 @@ impl XdrDeserialize for CreateType {
                 Self::Link(lt)
             }
             NfsFileType::Block => {
-                let data = SpecData::deserialize(src)?;
+                let data = NfsSpecData::deserialize(src)?;
                 Self::Block(data)
             }
             NfsFileType::Character => {
-                let data = SpecData::deserialize(src)?;
+                let data = NfsSpecData::deserialize(src)?;
                 Self::Character(data)
             }
             NfsFileType::Socket => Self::Socket,
             NfsFileType::Fifo => Self::Fifo,
             NfsFileType::Directory => Self::Directory,
             NfsFileType::Regular
-            | NfsFileType::AttrDirectory
-            | NfsFileType::NamedAttr => Self::Invalid(ftype),
+            | NfsFileType::AttributeDirectory
+            | NfsFileType::NamedAttribute => Self::Invalid(ftype),
         };
 
         Ok(object_type)
@@ -4554,7 +4606,7 @@ pub type GetDirectoryDelegationResult =
 #[derive(Debug)]
 pub struct GetDeviceInfoArgs {
     device_id: DeviceId,
-    layout_type: LayoutType,
+    layout_type: NfsLayoutType,
     max_count: Count,
     notify_types: BitMap,
 }
@@ -4573,7 +4625,7 @@ impl XdrSerialize for GetDeviceInfoArgs {
 impl XdrDeserialize for GetDeviceInfoArgs {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let device_id = DeviceId::deserialize(src)?;
-        let layout_type = LayoutType::deserialize(src)?;
+        let layout_type = NfsLayoutType::deserialize(src)?;
         let max_count = Count::deserialize(src)?;
         let notify_types = BitMap::deserialize(src)?;
 
@@ -4641,7 +4693,7 @@ pub type GetDeviceInfoResult = Result<GetDeviceInfoReturn, NfsStatus>;
 
 #[derive(Debug)]
 pub struct GetDeviceListArgs {
-    layout_type: LayoutType,
+    layout_type: NfsLayoutType,
     max_devices: Count,
     cookie: NfsCookie,
     cookie_verifier: Verifier,
@@ -4660,7 +4712,7 @@ impl XdrSerialize for GetDeviceListArgs {
 
 impl XdrDeserialize for GetDeviceListArgs {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
-        let layout_type = LayoutType::deserialize(src)?;
+        let layout_type = NfsLayoutType::deserialize(src)?;
         let max_devices = Count::deserialize(src)?;
         let cookie = NfsCookie::deserialize(src)?;
         let cookie_verifier = Verifier::deserialize(src)?;
@@ -4889,7 +4941,7 @@ pub type LayoutCommitResult = Result<LayoutCommitOk, NfsStatus>;
 #[derive(Debug)]
 pub struct LayoutGetArgs {
     signal_layout_available: bool,
-    layout_type: LayoutType,
+    layout_type: NfsLayoutType,
     io_mode: LayoutIoMode,
     offset: Offset,
     length: Length,
@@ -4916,7 +4968,7 @@ impl XdrSerialize for LayoutGetArgs {
 impl XdrDeserialize for LayoutGetArgs {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let signal_layout_available = bool::deserialize(src)?;
-        let layout_type = LayoutType::deserialize(src)?;
+        let layout_type = NfsLayoutType::deserialize(src)?;
         let io_mode = LayoutIoMode::deserialize(src)?;
         let offset = Offset::deserialize(src)?;
         let length = Length::deserialize(src)?;
@@ -4999,7 +5051,7 @@ pub type LayoutGetResult = Result<LayoutGetReturn, NfsStatus>;
 #[derive(Debug)]
 pub struct LayoutReturnArgs {
     reclaim: bool,
-    layout_type: LayoutType,
+    layout_type: NfsLayoutType,
     io_mode: LayoutIoMode,
     layout_return: LayoutReturn,
 }
@@ -5018,7 +5070,7 @@ impl XdrSerialize for LayoutReturnArgs {
 impl XdrDeserialize for LayoutReturnArgs {
     fn deserialize<R: Read>(src: &mut R) -> std::io::Result<Self> {
         let reclaim = bool::deserialize(src)?;
-        let layout_type = LayoutType::deserialize(src)?;
+        let layout_type = NfsLayoutType::deserialize(src)?;
         let io_mode = LayoutIoMode::deserialize(src)?;
         let layout_return = LayoutReturn::deserialize(src)?;
 
@@ -5390,7 +5442,7 @@ pub type WantDelegationResult = Result<WantDelegationOk, NfsStatus>;
 
 #[derive(Debug)]
 pub struct DestroyClientIdArgs {
-    client_id: ClientId,
+    pub client_id: ClientId,
 }
 
 impl XdrSerialize for DestroyClientIdArgs {

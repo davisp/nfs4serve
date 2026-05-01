@@ -159,7 +159,7 @@ impl XdrDeserialize for Vec<Vec<u8>> {
     }
 }
 
-#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct MaxLenBytes<const N: usize>(Vec<u8>);
 
 impl<const N: usize> MaxLenBytes<N> {

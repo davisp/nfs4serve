@@ -66,8 +66,6 @@ impl RpcConnection {
                 continue;
             }
 
-            log::debug!("RPC MESSAGE: {:#?}", ctx.call);
-
             if ctx.call.program == nfs::constants::PROGRAM {
                 return Ok(ctx);
             }
@@ -134,11 +132,7 @@ impl RpcContext {
     }
 
     pub fn write<T: XdrSerialize>(&mut self, val: &T) -> std::io::Result<()> {
-        let before = self.writer.position();
-        let ret = val.serialize(&mut self.writer);
-        let diff = self.writer.position() - before;
-        log::trace!("WROTE BYTES {diff}");
-        ret
+        val.serialize(&mut self.writer)
     }
 
     pub fn success(&self) -> RpcMessage {

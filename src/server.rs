@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{SocketAddr, ToSocketAddrs as _};
 use std::sync::{Arc, Mutex};
 
@@ -104,11 +104,16 @@ pub struct NFSv41ServerInner {
     server_owner: ServerOwner,
     server_scope: MaxLenBytes<NFS_OPAQUE_LIMIT>,
     address: SocketAddr,
+
     clients: HashMap<ClientId, Client>,
-    client_ids_by_owner: HashMap<MaxLenBytes<NFS_OPAQUE_LIMIT>, ClientId>,
     next_client_id: u64,
+
+    client_ids_by_owner: HashMap<MaxLenBytes<NFS_OPAQUE_LIMIT>, ClientId>,
+
     sessions: HashMap<SessionId, Session>,
     next_session_id: u128,
+
+    sessions_by_client_id: HashMap<ClientId, HashSet<SessionId>>,
 }
 
 impl NFSv41ServerInner {
@@ -179,10 +184,11 @@ impl NFSv41Server {
             server_scope,
             address,
             clients: HashMap::new(),
-            client_ids_by_owner: HashMap::new(),
             next_client_id: 1,
+            client_ids_by_owner: HashMap::new(),
             sessions: HashMap::new(),
             next_session_id: 1,
+            sessions_by_client_id: HashMap::new(),
         };
 
         Ok(Self {
@@ -583,6 +589,12 @@ impl NFSv41Server {
             let session = Session::new(args.clone());
             server.sessions.insert(session_id, session);
 
+            server
+                .sessions_by_client_id
+                .entry(args.client_id)
+                .or_default()
+                .insert(session_id);
+
             drop(server);
 
             let resp = CreateSessionOk {
@@ -628,9 +640,23 @@ impl NFSv41Server {
     async fn destroy_client_id(
         &self,
         _req: &mut NfsRequest,
-        _args: DestroyClientIdArgs,
+        args: DestroyClientIdArgs,
     ) -> DestroyClientIdResult {
-        todo!()
+        let mut server = self.inner.lock().expect("Server mutex was poisoned.");
+
+        if server
+            .sessions_by_client_id
+            .get(&args.client_id)
+            .is_some_and(|session_ids| !session_ids.is_empty())
+        {
+            return Err(NfsStatus::ClientIdBusy);
+        }
+
+        server.remove_client(args.client_id);
+
+        drop(server);
+
+        Ok(NfsStatus::Ok)
     }
 
     /// Destroy Session
@@ -642,11 +668,22 @@ impl NFSv41Server {
         args: DestroySessionArgs,
     ) -> DestroySessionResult {
         let mut server = self.inner.lock().expect("Server mutex was poisoned.");
-        let Some(_session) = server.sessions.remove(&args.session_id) else {
+        let Some(session) = server.sessions.remove(&args.session_id) else {
             return Err(NfsStatus::BadSession);
         };
 
-        // Eventually, cleanup anything related to the session here.
+        let is_empty = server
+            .sessions_by_client_id
+            .get_mut(&session.client_id)
+            .is_some_and(|session_ids| {
+                session_ids.remove(&args.session_id);
+                session_ids.is_empty()
+            });
+
+        // If there aren't any sessions, remove the empty HashSet.
+        if is_empty {
+            server.sessions_by_client_id.remove(&session.client_id);
+        }
 
         drop(server);
 
@@ -756,6 +793,9 @@ impl NFSv41Server {
         };
 
         let attrs = nfs::attrs::protocol_to_api(&args.attr_request);
+
+        log::trace!("get_attributes request: {attrs:#?}");
+
         let resp = match self.handler.get_attributes(fh, &attrs).await {
             Ok(vals) => vals,
             Err(err) => {
@@ -766,12 +806,9 @@ impl NFSv41Server {
             }
         };
 
-        if resp.is_empty() {
-            // No idea which error is best for this case.
-            return Err(NfsStatus::ESTALE);
-        }
+        log::trace!("get_attributes response: {resp:#?}");
 
-        let attributes = match nfs::attrs::values_to_protocol(resp) {
+        let attributes = match nfs::attrs::values_to_protocol(attrs, resp) {
             Ok(attrs) => attrs,
             Err(err) => {
                 log::error!(

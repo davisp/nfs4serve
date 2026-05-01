@@ -5,7 +5,16 @@ mod attributes;
 pub use attributes::*;
 
 pub use super::NfsStatus;
-pub use super::types::NfsFh;
+pub use super::types::{
+    NfsAce, NfsAceFlag, NfsAceMask, NfsAceType, NfsAclFlag, NfsChangePolicy,
+    NfsExpirationPolicy, NfsFh, NfsFileSystemId, NfsFileType, NfsFsLocation,
+    NfsFsLocations, NfsFsLocationsInfo, NfsFsLocationsItem,
+    NfsFsLocationsServer, NfsFsStatus, NfsLayoutHint, NfsLayoutType,
+    NfsModeMasked, NfsPathName, NfsSpecData, NfsTime,
+};
+
+// Rexport to avoid forcing the dependency.
+pub use num_traits::cast::{FromPrimitive, ToPrimitive};
 
 /// The core `NFSHandler` trait.
 ///
@@ -26,12 +35,12 @@ pub trait NfsHandler: Send + Sync {
 
     /// Get the requested file attributes.
     ///
-    /// Note, if for some reason the server is currently incapable of returning
-    /// one of the supported attributes in this request (i.e., a network
-    /// connection died) then no attribute values should be returned.
+    /// The `attributes` argument is the list of requested attributes. If some
+    /// attributes are expensive to calculate, you can check if the attribute
+    /// has been requested or not.
     async fn get_attributes(
         &self,
         fh: &NfsFh,
         attributes: &[NfsAttribute],
-    ) -> Result<Vec<NfsAttributeValue>>;
+    ) -> Result<NfsAttributes, NfsStatus>;
 }
